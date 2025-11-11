@@ -20,6 +20,10 @@ graph TB
         RSC[Recipe Schema Converter]
     end
 
+    subgraph "External Services"
+        LLM[LLM API]
+    end
+
     subgraph "Storage"
         DB[(MongoDB)]
     end
@@ -30,6 +34,7 @@ graph TB
 
     IG -->|Publish: raw_recipe_data| RMQ
     RMQ -->|Consume: raw_recipe_data| RSC
+    RSC <-->|API Request/Response| LLM
     RSC -->|Publish: converted_recipe| RMQ
     RMQ -->|Consume: converted_recipe| DB
     DB <-->|Query/Store| UI
@@ -39,6 +44,7 @@ graph TB
     style RMQ fill:#ff6b6b
     style IG fill:#4ecdc4
     style RSC fill:#45b7d1
+    style LLM fill:#a29bfe
     style DB fill:#96ceb4
     style UI fill:#ffeaa7
 ```
@@ -52,7 +58,10 @@ Scrapes recipe content from Instagram and publishes raw data to RabbitMQ.
 Central message broker handling asynchronous communication between components.
 
 ### Recipe Schema Converter
-Processes raw recipe data and converts it into a standardized schema format.
+Processes raw recipe data and converts it into a standardized schema format using an external LLM API for intelligent extraction and structuring.
+
+### LLM API
+External language model service accessed via API to parse and structure unstructured recipe data into standardized format.
 
 ### MongoDB
 Persistent data storage for processed recipes.
