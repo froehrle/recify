@@ -1,1 +1,61 @@
 # recify
+
+A recipe management system with event-driven architecture for crawling, processing, and storing recipes from Instagram.
+
+## Architecture Overview
+
+The system follows an event-driven architecture using RabbitMQ as the central message broker:
+
+```mermaid
+graph TB
+    subgraph "Data Sources"
+        IG[Instagram Crawler]
+    end
+
+    subgraph "Message Broker"
+        RMQ[RabbitMQ]
+    end
+
+    subgraph "Processing"
+        RSC[Recipe Schema Converter]
+    end
+
+    subgraph "Storage"
+        DB[(MongoDB)]
+    end
+
+    subgraph "Presentation"
+        UI[Web UI]
+    end
+
+    IG -->|Publish: raw_recipe_data| RMQ
+    RMQ -->|Consume: raw_recipe_data| RSC
+    RSC -->|Publish: converted_recipe| RMQ
+    RMQ -->|Consume: converted_recipe| DB
+    DB <-->|Query/Store| UI
+    UI -->|Request crawl| RMQ
+    RMQ -->|Crawl command| IG
+
+    style RMQ fill:#ff6b6b
+    style IG fill:#4ecdc4
+    style RSC fill:#45b7d1
+    style DB fill:#96ceb4
+    style UI fill:#ffeaa7
+```
+
+## Components
+
+### Instagram Crawler
+Scrapes recipe content from Instagram and publishes raw data to RabbitMQ.
+
+### RabbitMQ
+Central message broker handling asynchronous communication between components.
+
+### Recipe Schema Converter
+Processes raw recipe data and converts it into a standardized schema format.
+
+### MongoDB
+Persistent data storage for processed recipes.
+
+### Web UI
+User interface for browsing recipes and triggering crawl operations.
