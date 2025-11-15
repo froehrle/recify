@@ -1,0 +1,2 @@
+- You can find the documentation of the library instaloader here: https://instaloader.github.io/
+- Add successful commands to the @Justfile

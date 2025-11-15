@@ -198,18 +198,25 @@ class InstagramCrawler:
         return media_urls
  
     def _extract_author_top_comment(self, post) -> Optional[str]:
-        """Extract the author's top comment (pinned or first comment by author)"""
+        """Extract the author's most liked comment"""
         try:
             # Get comments from the post
             comments = post.get_comments()
             author_username = post.owner_username
 
-            # Look for author's comments, prioritizing pinned comments
+            # Find all comments by the author
+            author_comments = []
             for comment in comments:
                 if comment.owner.username == author_username:
-                    return comment.text
+                    author_comments.append(comment)
 
-            return None
+            if not author_comments:
+                return None
+
+            # Find the comment with the most likes
+            most_liked_comment = max(author_comments, key=lambda c: c.likes)
+            return most_liked_comment.text
+
         except Exception:
             # If comments can't be fetched, return None
             return None
