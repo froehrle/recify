@@ -1,0 +1,61 @@
+install:
+    uv sync --dev
+
+create-session:
+    uv run python create_session.py
+
+test:
+    uv run pytest
+
+test-unit:
+    uv run pytest tests/test_crawler.py -v
+
+test-celery:
+    uv run pytest tests/test_celery_tasks.py -v
+
+test-integration:
+    uv run pytest tests/test_integration.py -v
+
+test-task:
+    uv run python -c "from tasks import crawl_instagram_post; print('Task imported successfully')"
+
+build:
+    docker-compose build
+
+start-rabbitmq:
+    docker-compose up rabbitmq -d
+
+start:
+    docker-compose up -d
+
+start-with-monitoring:
+    docker-compose --profile monitoring up -d
+
+stop:
+    docker-compose down
+
+clean:
+    docker-compose down -v
+
+health:
+    docker-compose ps
+
+worker:
+    uv run celery -A celeryapp worker --loglevel=info
+
+monitor:
+    uv run celery -A celeryapp flower
+
+logs:
+    docker-compose logs -f instagram-scraper
+
+logs-rabbitmq:
+    docker-compose logs -f rabbitmq
+
+rabbitmq-ui:
+    @echo "RabbitMQ Management UI: http://localhost:15672"
+    @echo "Username: guest"
+    @echo "Password: guest"
+
+flower-ui:
+    @echo "Celery Flower UI: http://localhost:5555"
