@@ -64,7 +64,7 @@ rabbitmq-ui:
 start-and-test:
     uv run python scripts/start_and_test.py
 
-send-event URL="https://www.instagram.com/p/DITcnygqFll/":
+send-event URL="https://www.instagram.com/p/DPWmEl0leJO/":
     uv run python scripts/send_test_event.py {{URL}}
 
 send-manual URL="https://www.instagram.com/p/DITcnygqFll/":

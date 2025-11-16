@@ -19,43 +19,10 @@ def callback(ch, method, properties, body):
         print("📥 NEW RECIPE DATA RECEIVED")
         print("="*70)
 
-        print(f"\n📍 URL: {data.get('url', 'N/A')}")
-        print(f"👤 Author: {data.get('author', 'N/A')}")
-        print(f"📅 Timestamp: {data.get('timestamp', 'N/A')}")
+        # Pretty print the entire JSON event
+        print(json.dumps(data, indent=2, ensure_ascii=False))
 
-        caption = data.get('caption', '')
-        if caption:
-            print(f"\n📝 Caption ({len(caption)} chars):")
-            print(f"   {caption[:200]}{'...' if len(caption) > 200 else ''}")
-
-        media_urls = data.get('media_urls', [])
-        print(f"\n🖼️  Media ({len(media_urls)} items):")
-        for i, url in enumerate(media_urls, 1):
-            print(f"   {i}. {url}")
-
-        hashtags = data.get('hashtags', [])
-        if hashtags:
-            print(f"\n🏷️  Hashtags: {', '.join(f'#{tag}' for tag in hashtags)}")
-
-        mentions = data.get('mentions', [])
-        if mentions:
-            print(f"👥 Mentions: {', '.join(f'@{user}' for user in mentions)}")
-
-        likes = data.get('likes_count')
-        comments = data.get('comments_count')
-        if likes or comments:
-            print(f"\n📊 Engagement:")
-            if likes:
-                print(f"   ❤️  Likes: {likes:,}")
-            if comments:
-                print(f"   💬 Comments: {comments:,}")
-
-        top_comment = data.get('author_top_comment')
-        if top_comment:
-            print(f"\n💭 Author's top comment:")
-            print(f"   {top_comment}")
-
-        print("\n" + "="*70 + "\n")
+        print("="*70 + "\n")
 
         # Acknowledge message
         ch.basic_ack(delivery_tag=method.delivery_tag)
