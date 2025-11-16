@@ -3,6 +3,8 @@ from instagram_crawler import InstagramCrawler
 from models import CrawlRequest, RawRecipeData
 import json
 import logging
+import pika
+from config import RABBITMQ_HOST
 
 logger = logging.getLogger(__name__)
 
@@ -25,8 +27,8 @@ def crawl_instagram_post(self, request_data: dict):
         # Extract post data using instaloader
         raw_data = crawler.extract_post_data(str(request.instagram_url))
 
-        # Publish to raw_recipe_data queue
-        publish_raw_recipe_data.delay(raw_data.model_dump())
+        # Publish to raw_recipe_data queue (plain JSON for TypeScript consumer)
+        publish_raw_recipe_data(raw_data.model_dump())
 
         logger.info(f"Successfully processed Instagram post: {request.instagram_url}")
 
@@ -45,13 +47,15 @@ def crawl_instagram_post(self, request_data: dict):
         retry_countdown = 2 ** self.request.retries * 60  # 60s, 120s, 240s
         raise self.retry(countdown=retry_countdown, exc=exc)
 
-@app.task(name='publish_raw_recipe_data')
 def publish_raw_recipe_data(raw_data: dict):
     """
-    Publish extracted data to raw_recipe_data queue
+    Publish extracted data to raw_recipe_data queue as plain JSON.
 
-    This task represents publishing the data to the next service in the pipeline.
-    In a real implementation, this would send the data to the Recipe Schema Converter.
+    This publishes directly to RabbitMQ (not via Celery) so that the
+    TypeScript Recipe Schema Converter can consume plain JSON messages.
+
+    Messages are persisted (delivery_mode=2) and the queue is durable,
+    so messages survive until consumed.
     """
     try:
         logger.info(f"Publishing raw recipe data for post: {raw_data.get('url', 'unknown')}")
@@ -59,15 +63,35 @@ def publish_raw_recipe_data(raw_data: dict):
         # Validate the data structure
         validated_data = RawRecipeData(**raw_data)
 
-        # Here you would publish to the actual raw_recipe_data queue
-        # For now, we just log the successful processing
-        logger.info(f"Successfully published recipe data: {validated_data.url}")
+        # Connect to RabbitMQ
+        connection = pika.BlockingConnection(
+            pika.ConnectionParameters(host=RABBITMQ_HOST)
+        )
+        channel = connection.channel()
 
-        return {
-            "status": "published",
-            "url": validated_data.url,
-            "timestamp": validated_data.timestamp.isoformat()
-        }
+        # Declare durable queue (survives RabbitMQ restart)
+        channel.queue_declare(queue='raw_recipe_data', durable=True)
+
+        # Prepare message with full data
+        message = validated_data.model_dump()
+
+        # Serialize datetime to ISO format
+        message['timestamp'] = validated_data.timestamp.isoformat()
+
+        # Publish message with persistence
+        channel.basic_publish(
+            exchange='',
+            routing_key='raw_recipe_data',
+            body=json.dumps(message),
+            properties=pika.BasicProperties(
+                delivery_mode=2,  # Make message persistent
+                content_type='application/json'
+            )
+        )
+
+        connection.close()
+
+        logger.info(f"Successfully published recipe data to RabbitMQ: {validated_data.url}")
 
     except Exception as exc:
         logger.error(f"Failed to publish raw recipe data: {exc}")

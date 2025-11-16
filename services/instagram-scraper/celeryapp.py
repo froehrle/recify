@@ -11,8 +11,7 @@ app.conf.update(
     timezone='UTC',
     enable_utc=True,
     task_routes={
-        'tasks.crawl_instagram_post': {'queue': 'crawl_requests'},
-        'tasks.publish_raw_recipe_data': {'queue': 'raw_recipe_data'},
+        'crawl_instagram_post': {'queue': 'crawl_requests'},
     },
     worker_prefetch_multiplier=1,  # Process one task at a time
     task_acks_late=True,  # Acknowledge after task completion

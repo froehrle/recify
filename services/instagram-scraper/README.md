@@ -121,7 +121,8 @@ uv run black .
 
 ### Dashboards
 
-- **RabbitMQ Management**: http://localhost:15672 (guest/guest)
+- **RabbitMQ Management** (default): http://localhost:15672 (guest/guest)
+- **RabbitScout** (modern UI): http://localhost:3000
 - **Celery Flower**: http://localhost:5555 (when monitoring enabled)
 
 ### Health Checks
@@ -134,6 +135,38 @@ just health-instagram-service
 just logs-instagram-scraper
 just logs-rabbitmq
 ```
+
+## API Documentation
+
+### AsyncAPI Specification
+
+This service follows the AsyncAPI specification defined in `asyncapi.yaml`. The specification documents:
+
+- **Message schemas** for input (`CrawlRequest`) and output (`RawRecipeData`)
+- **Queue definitions** for `crawl_requests` and `raw_recipe_data`
+- **Operation flows** for consuming and publishing messages
+- **Examples** for all message types
+
+### Viewing API Documentation
+
+**Local validation:**
+```bash
+# Validate the AsyncAPI specification
+just validate-asyncapi
+```
+
+**Online documentation viewer:**
+Due to compatibility issues with the local AsyncAPI studio, use the online version:
+1. Open https://studio.asyncapi.com
+2. Copy contents of `asyncapi.yaml`
+3. Paste into the online editor
+
+### Message Schemas
+
+The service operates on two main message types defined in the AsyncAPI specification:
+
+- **Input**: `CrawlRequest` messages from `crawl_requests` queue
+- **Output**: `RawRecipeData` messages to `raw_recipe_data` queue
 
 ## Architecture
 

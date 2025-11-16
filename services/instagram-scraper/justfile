@@ -46,6 +46,9 @@ worker:
 monitor:
     uv run celery -A celeryapp flower
 
+consume-results:
+    uv run python scripts/consume_results.py
+
 logs:
     docker-compose logs -f instagram-scraper
 
@@ -59,3 +62,18 @@ rabbitmq-ui:
 
 flower-ui:
     @echo "Celery Flower UI: http://localhost:5555"
+
+start-and-test:
+    uv run python scripts/start_and_test.py
+
+send-event URL="https://www.instagram.com/p/DITcnygqFll/":
+    uv run python scripts/send_test_event.py {{URL}}
+
+send-manual URL="https://www.instagram.com/p/DITcnygqFll/":
+    uv run python scripts/send_manual_request.py {{URL}}
+
+generate-asyncapi-docs:
+    bash scripts/generate_asyncapi_docs.sh
+
+validate-asyncapi:
+    asyncapi validate asyncapi.yaml

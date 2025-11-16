@@ -74,6 +74,26 @@ services:
     profiles:
       - monitoring
 
+  # RabbitScout: Modern RabbitMQ Management UI
+  rabbitscout:
+    image: ghcr.io/ralve-org/rabbitscout:latest
+    container_name: rabbitscout
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_RABBITMQ_HOST: rabbitmq
+      NEXT_PUBLIC_RABBITMQ_PORT: 15672
+      NEXT_PUBLIC_RABBITMQ_VHOST: /
+      RABBITMQ_USERNAME: guest
+      RABBITMQ_PASSWORD: guest
+      NEXT_PUBLIC_API_URL: http://localhost:3000
+    networks:
+      - instagram-network
+    restart: unless-stopped
+
 volumes:
   rabbitmq_data:
   rabbitmq_logs:

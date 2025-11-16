@@ -3,6 +3,7 @@ from unittest.mock import Mock, patch, MagicMock, call
 from datetime import datetime
 from celery.exceptions import Retry
 from pydantic import ValidationError
+import json
 from tasks import crawl_instagram_post, publish_raw_recipe_data
 from models import CrawlRequest, RawRecipeData
 
@@ -10,7 +11,7 @@ from models import CrawlRequest, RawRecipeData
 class TestCrawlInstagramPostTask:
     """Test cases for crawl_instagram_post Celery task"""
 
-    @patch('tasks.publish_raw_recipe_data.delay')
+    @patch('tasks.publish_raw_recipe_data')
     @patch('tasks.InstagramCrawler')
     def test_successful_crawl_and_publish(self, mock_crawler_class, mock_publish):
         """Test successful Instagram post crawling and publishing"""
@@ -85,7 +86,7 @@ class TestCrawlInstagramPostTask:
             CrawlRequest(**request_data)
 
     @patch('tasks.InstagramCrawler')
-    @patch('tasks.publish_raw_recipe_data.delay')
+    @patch('tasks.publish_raw_recipe_data')
     def test_crawler_instance_created(self, mock_publish, mock_crawler_class):
         """Test that InstagramCrawler is properly instantiated"""
         # Given: Valid request data
@@ -109,7 +110,7 @@ class TestCrawlInstagramPostTask:
         # Then: Should create InstagramCrawler instance
         mock_crawler_class.assert_called_once()
 
-    @patch('tasks.publish_raw_recipe_data.delay')
+    @patch('tasks.publish_raw_recipe_data')
     @patch('tasks.InstagramCrawler')
     def test_extract_post_data_called_with_correct_url(self, mock_crawler_class, mock_publish):
         """Test crawler.extract_post_data is called with the correct URL"""
@@ -135,7 +136,7 @@ class TestCrawlInstagramPostTask:
         # Then: Should call crawler.extract_post_data with exact URL string
         mock_crawler.extract_post_data.assert_called_once_with(test_url)
 
-    @patch('tasks.publish_raw_recipe_data.delay')
+    @patch('tasks.publish_raw_recipe_data')
     @patch('tasks.InstagramCrawler')
     def test_successful_extraction_returns_raw_data(self, mock_crawler_class, mock_publish):
         """Test successful extraction returns RawRecipeData object"""
@@ -166,10 +167,10 @@ class TestCrawlInstagramPostTask:
         assert result['caption_length'] == len('Test caption')
         assert result['media_count'] == 1
 
-    @patch('tasks.publish_raw_recipe_data.delay')
+    @patch('tasks.publish_raw_recipe_data')
     @patch('tasks.InstagramCrawler')
     def test_publish_task_called_with_extracted_data(self, mock_crawler_class, mock_publish):
-        """Test publish_raw_recipe_data task is called with extracted data"""
+        """Test publish_raw_recipe_data function is called with extracted data"""
         # Given: Successfully extracted raw data
         request_data = {'instagram_url': 'https://www.instagram.com/p/PUB123/'}
 
@@ -190,13 +191,13 @@ class TestCrawlInstagramPostTask:
         # When: Crawl task completes extraction
         crawl_instagram_post(request_data)
 
-        # Then: Should call publish_raw_recipe_data.delay() with serialized data
+        # Then: Should call publish_raw_recipe_data() with serialized data
         mock_publish.assert_called_once()
         call_args = mock_publish.call_args[0][0]
         assert call_args['url'] == 'https://www.instagram.com/p/PUB123/'
         assert call_args['author'] == 'publisher'
 
-    @patch('tasks.publish_raw_recipe_data.delay')
+    @patch('tasks.publish_raw_recipe_data')
     @patch('tasks.InstagramCrawler')
     def test_task_returns_success_status(self, mock_crawler_class, mock_publish):
         """Test task returns success status with metadata"""
@@ -225,7 +226,7 @@ class TestCrawlInstagramPostTask:
         assert 'caption_length' in result
         assert 'media_count' in result
 
-    @patch('tasks.publish_raw_recipe_data.delay')
+    @patch('tasks.publish_raw_recipe_data')
     @patch('tasks.InstagramCrawler')
     def test_return_metadata_accuracy(self, mock_crawler_class, mock_publish):
         """Test returned metadata matches extracted data"""
@@ -373,7 +374,7 @@ class TestCrawlInstagramPostTask:
         assert 2 ** 2 * 60 == 240
 
     @patch('tasks.logger')
-    @patch('tasks.publish_raw_recipe_data.delay')
+    @patch('tasks.publish_raw_recipe_data')
     @patch('tasks.InstagramCrawler')
     def test_logging_on_successful_processing(self, mock_crawler_class, mock_publish, mock_logger):
         """Test that success is logged with correct information"""
@@ -428,7 +429,7 @@ class TestCrawlInstagramPostTask:
         # Then: Should be accessible by name 'crawl_instagram_post'
         assert crawl_instagram_post.name == 'crawl_instagram_post'
 
-    @patch('tasks.publish_raw_recipe_data.delay')
+    @patch('tasks.publish_raw_recipe_data')
     @patch('tasks.InstagramCrawler')
     def test_concurrent_task_execution(self, mock_crawler_class, mock_publish):
         """Test multiple tasks can be processed concurrently"""
@@ -456,7 +457,7 @@ class TestCrawlInstagramPostTask:
         assert result1['status'] == 'success'
         assert result2['status'] == 'success'
 
-    @patch('tasks.publish_raw_recipe_data.delay')
+    @patch('tasks.publish_raw_recipe_data')
     @patch('tasks.InstagramCrawler')
     def test_task_idempotency(self, mock_crawler_class, mock_publish):
         """Test that re-processing same URL produces consistent results"""
@@ -484,10 +485,11 @@ class TestCrawlInstagramPostTask:
 
 
 class TestPublishRawRecipeDataTask:
-    """Test cases for publish_raw_recipe_data Celery task"""
+    """Test cases for publish_raw_recipe_data function"""
 
-    def test_successful_data_publishing(self):
-        """Test successful publishing of raw recipe data"""
+    @patch('tasks.pika.BlockingConnection')
+    def test_successful_data_publishing(self, mock_connection):
+        """Test successful publishing of raw recipe data to RabbitMQ"""
         # Given: Valid raw_data dict
         raw_data = {
             'url': 'https://www.instagram.com/p/TEST/',
@@ -499,14 +501,20 @@ class TestPublishRawRecipeDataTask:
             'mentions': []
         }
 
-        # When: Task processes the data
-        result = publish_raw_recipe_data(raw_data)
+        # Mock RabbitMQ connection and channel
+        mock_channel = Mock()
+        mock_connection.return_value.channel.return_value = mock_channel
 
-        # Then: Should validate and publish successfully
-        assert result['status'] == 'published'
-        assert result['url'] == 'https://www.instagram.com/p/TEST/'
+        # When: Function publishes the data
+        publish_raw_recipe_data(raw_data)
 
-    def test_data_validation_with_raw_recipe_data_model(self):
+        # Then: Should publish to RabbitMQ
+        mock_channel.queue_declare.assert_called_once_with(queue='raw_recipe_data', durable=True)
+        mock_channel.basic_publish.assert_called_once()
+        mock_connection.return_value.close.assert_called_once()
+
+    @patch('tasks.pika.BlockingConnection')
+    def test_data_validation_with_raw_recipe_data_model(self, mock_connection):
         """Test data is validated against RawRecipeData model"""
         # Given: Raw data dictionary
         raw_data = {
@@ -519,11 +527,15 @@ class TestPublishRawRecipeDataTask:
             'mentions': []
         }
 
-        # When: Task validates data
-        result = publish_raw_recipe_data(raw_data)
+        # Mock RabbitMQ
+        mock_channel = Mock()
+        mock_connection.return_value.channel.return_value = mock_channel
 
-        # Then: Should create valid RawRecipeData object and succeed
-        assert result['status'] == 'published'
+        # When: Function validates and publishes data
+        publish_raw_recipe_data(raw_data)
+
+        # Then: Should successfully publish (no ValidationError raised)
+        assert mock_channel.basic_publish.called
 
     def test_valid_data_structure_all_fields(self):
         """Test validation accepts data with all required fields"""
@@ -640,50 +652,38 @@ class TestPublishRawRecipeDataTask:
         with pytest.raises(ValidationError):
             RawRecipeData(**data)
 
-    def test_task_return_status_on_success(self):
-        """Test task returns success status with metadata"""
-        # Given: Successfully published data
-        raw_data = {
-            'url': 'https://www.instagram.com/p/RETURN/',
-            'caption': 'Return test',
-            'media_urls': ['img.jpg'],
-            'author': 'return_user',
-            'timestamp': '2025-01-15T14:30:00',
-            'hashtags': [],
-            'mentions': []
-        }
-
-        # When: Task completes
-        result = publish_raw_recipe_data(raw_data)
-
-        # Then: Should return dict with status='published', url, timestamp
-        assert result['status'] == 'published'
-        assert 'url' in result
-        assert 'timestamp' in result
-
-    def test_return_timestamp_iso_format(self):
-        """Test returned timestamp is in ISO format"""
+    @patch('tasks.pika.BlockingConnection')
+    def test_message_published_with_correct_format(self, mock_connection):
+        """Test message is published with correct JSON format"""
         # Given: Data with datetime timestamp
         raw_data = {
-            'url': 'https://www.instagram.com/p/ISOFORMAT/',
-            'caption': 'ISO format test',
+            'url': 'https://www.instagram.com/p/FORMAT/',
+            'caption': 'Format test',
             'media_urls': ['img.jpg'],
-            'author': 'iso_user',
+            'author': 'format_user',
             'timestamp': datetime(2025, 1, 15, 16, 45, 30),
             'hashtags': [],
             'mentions': []
         }
 
-        # When: Task completes
-        result = publish_raw_recipe_data(raw_data)
+        # Mock RabbitMQ
+        mock_channel = Mock()
+        mock_connection.return_value.channel.return_value = mock_channel
 
-        # Then: Should return timestamp in ISO 8601 format
-        assert 'timestamp' in result
-        # Verify it's a valid ISO format string
-        datetime.fromisoformat(result['timestamp'])
+        # When: Function publishes
+        publish_raw_recipe_data(raw_data)
 
+        # Then: Should publish JSON with ISO timestamp
+        call_args = mock_channel.basic_publish.call_args
+        published_body = call_args[1]['body']
+        message = json.loads(published_body)
+
+        assert message['url'] == 'https://www.instagram.com/p/FORMAT/'
+        assert message['timestamp'] == '2025-01-15T16:45:30'  # ISO format
+
+    @patch('tasks.pika.BlockingConnection')
     @patch('tasks.logger')
-    def test_logging_on_successful_publish(self, mock_logger):
+    def test_logging_on_successful_publish(self, mock_logger, mock_connection):
         """Test success is logged with URL"""
         # Given: Successful publish
         raw_data = {
@@ -696,7 +696,11 @@ class TestPublishRawRecipeDataTask:
             'mentions': []
         }
 
-        # When: Task completes
+        # Mock RabbitMQ
+        mock_channel = Mock()
+        mock_connection.return_value.channel.return_value = mock_channel
+
+        # When: Function publishes
         publish_raw_recipe_data(raw_data)
 
         # Then: Should log info messages with post URL
@@ -740,32 +744,32 @@ class TestPublishRawRecipeDataTask:
         with pytest.raises(Exception):
             publish_raw_recipe_data(raw_data)
 
-    def test_task_name_registration(self):
-        """Test task is registered with correct name 'publish_raw_recipe_data'"""
-        # Given: Task definition with name parameter
-        # When: Checking task name
-        # Then: Should be accessible by name 'publish_raw_recipe_data'
-        assert publish_raw_recipe_data.name == 'publish_raw_recipe_data'
+    @patch('tasks.pika.BlockingConnection')
+    def test_message_persistence(self, mock_connection):
+        """Test messages are published with persistence"""
+        # Given: Valid data
+        raw_data = {
+            'url': 'https://www.instagram.com/p/PERSIST/',
+            'caption': 'Persistence test',
+            'media_urls': ['img.jpg'],
+            'author': 'persist_user',
+            'timestamp': '2025-01-15T12:00:00',
+            'hashtags': [],
+            'mentions': []
+        }
 
-    def test_no_retry_on_failure(self):
-        """Test publish task does not retry on failure"""
-        # Given: Task without bind=True
-        # When: Checking if task is bound
-        # Then: Should not be bound (no self.retry() available)
-        # Celery tasks without bind=True don't have retry() method accessible
-        assert not hasattr(publish_raw_recipe_data, '__self__')
+        # Mock RabbitMQ
+        mock_channel = Mock()
+        mock_connection.return_value.channel.return_value = mock_channel
 
-    def test_queue_routing_integration(self):
-        """Test task is routed to raw_recipe_data queue"""
-        # Given: Task configuration in celeryapp.py
-        from celeryapp import app
+        # When: Function publishes
+        publish_raw_recipe_data(raw_data)
 
-        # When: Checking task routing
-        task_routes = app.conf.task_routes
-
-        # Then: Should be routed to 'raw_recipe_data' queue
-        assert 'tasks.publish_raw_recipe_data' in task_routes
-        assert task_routes['tasks.publish_raw_recipe_data']['queue'] == 'raw_recipe_data'
+        # Then: Should publish with delivery_mode=2 (persistent)
+        call_args = mock_channel.basic_publish.call_args
+        properties = call_args[1]['properties']
+        assert properties.delivery_mode == 2
+        assert properties.content_type == 'application/json'
 
 
 class TestCeleryAppConfiguration:
@@ -853,20 +857,20 @@ class TestCeleryAppConfiguration:
         task_routes = app.conf.task_routes
 
         # Then: Should route to 'crawl_requests' queue
-        assert 'tasks.crawl_instagram_post' in task_routes
-        assert task_routes['tasks.crawl_instagram_post']['queue'] == 'crawl_requests'
+        assert 'crawl_instagram_post' in task_routes
+        assert task_routes['crawl_instagram_post']['queue'] == 'crawl_requests'
 
-    def test_task_routing_publish_raw_recipe_data(self):
-        """Test publish_raw_recipe_data task routes to raw_recipe_data queue"""
+    def test_task_routing_only_crawl_task(self):
+        """Test only crawl_instagram_post is routed via Celery"""
         # Given: task_routes configuration
         from celeryapp import app
 
         # When: Checking task routing
         task_routes = app.conf.task_routes
 
-        # Then: Should route to 'raw_recipe_data' queue
-        assert 'tasks.publish_raw_recipe_data' in task_routes
-        assert task_routes['tasks.publish_raw_recipe_data']['queue'] == 'raw_recipe_data'
+        # Then: Only crawl_instagram_post should be in routes
+        assert 'crawl_instagram_post' in task_routes
+        assert 'publish_raw_recipe_data' not in task_routes  # Not a Celery task
 
     def test_worker_prefetch_multiplier_one(self):
         """Test worker processes one task at a time"""
@@ -903,15 +907,16 @@ class TestCeleryAppConfiguration:
         # When: Checking registered tasks
         registered_tasks = list(app.tasks.keys())
 
-        # Then: Should discover tasks from ['tasks'] module
+        # Then: Should discover crawl_instagram_post from tasks module
         assert 'crawl_instagram_post' in registered_tasks or 'tasks.crawl_instagram_post' in registered_tasks
-        assert 'publish_raw_recipe_data' in registered_tasks or 'tasks.publish_raw_recipe_data' in registered_tasks
+        # publish_raw_recipe_data is not a Celery task, so it should not be registered
+        assert 'publish_raw_recipe_data' not in registered_tasks
 
 
 class TestTaskIntegration:
     """Integration tests for task workflow"""
 
-    @patch('tasks.publish_raw_recipe_data.delay')
+    @patch('tasks.publish_raw_recipe_data')
     @patch('tasks.InstagramCrawler')
     def test_end_to_end_crawl_to_publish_workflow(self, mock_crawler_class, mock_publish):
         """Test complete workflow from crawl request to data publishing"""
@@ -950,7 +955,7 @@ class TestTaskIntegration:
         assert published_data['url'] == 'https://www.instagram.com/p/E2E_TEST/'
         assert published_data['author'] == 'e2e_chef'
 
-    @patch('tasks.publish_raw_recipe_data.delay')
+    @patch('tasks.publish_raw_recipe_data')
     @patch('tasks.InstagramCrawler')
     def test_failed_crawl_does_not_publish(self, mock_crawler_class, mock_publish):
         """Test that publish is not called when crawl fails"""
@@ -968,20 +973,30 @@ class TestTaskIntegration:
         # Then: Should not call publish_raw_recipe_data
         mock_publish.assert_not_called()
 
-    def test_queue_isolation_between_tasks(self):
-        """Test tasks operate on separate queues"""
-        # Given: Both tasks configured with different queues
-        from celeryapp import app
-        task_routes = app.conf.task_routes
+    @patch('tasks.pika.BlockingConnection')
+    def test_publishes_to_correct_queue(self, mock_connection):
+        """Test publish_raw_recipe_data publishes to raw_recipe_data queue"""
+        # Given: Valid data
+        raw_data = {
+            'url': 'https://www.instagram.com/p/QUEUE/',
+            'caption': 'Queue test',
+            'media_urls': ['img.jpg'],
+            'author': 'queue_user',
+            'timestamp': '2025-01-15T12:00:00',
+            'hashtags': [],
+            'mentions': []
+        }
 
-        # When: Checking queue configuration
-        crawl_queue = task_routes['tasks.crawl_instagram_post']['queue']
-        publish_queue = task_routes['tasks.publish_raw_recipe_data']['queue']
+        # Mock RabbitMQ
+        mock_channel = Mock()
+        mock_connection.return_value.channel.return_value = mock_channel
 
-        # Then: Should maintain queue isolation
-        assert crawl_queue == 'crawl_requests'
-        assert publish_queue == 'raw_recipe_data'
-        assert crawl_queue != publish_queue
+        # When: Publishing
+        publish_raw_recipe_data(raw_data)
+
+        # Then: Should publish to raw_recipe_data queue
+        call_args = mock_channel.basic_publish.call_args
+        assert call_args[1]['routing_key'] == 'raw_recipe_data'
 
     @patch('tasks.InstagramCrawler')
     def test_message_format_consistency(self, mock_crawler_class):
@@ -1002,7 +1017,7 @@ class TestTaskIntegration:
         )
         mock_crawler.extract_post_data.return_value = raw_data
 
-        with patch('tasks.publish_raw_recipe_data.delay') as mock_publish:
+        with patch('tasks.publish_raw_recipe_data') as mock_publish:
             # When: Crawl task outputs data
             crawl_instagram_post({'instagram_url': 'https://www.instagram.com/p/FORMAT_TEST/'})
 
