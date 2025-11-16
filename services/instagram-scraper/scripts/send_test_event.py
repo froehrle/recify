@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Send a test crawl request to the Instagram Scraper queue.
+Send a test crawl request to the Instagram Scraper queue using pika.
 
 Usage:
     python send_test_event.py [INSTAGRAM_URL]
@@ -10,8 +10,15 @@ Example:
 """
 
 import sys
+import json
+import pika
 from datetime import datetime
-from tasks import crawl_instagram_post
+from pathlib import Path
+
+# Add parent directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from config import RABBITMQ_HOST
 
 
 def main():
@@ -43,22 +50,42 @@ def main():
     print("="*60)
 
     try:
-        # Send the task to the queue
-        result = crawl_instagram_post.delay(test_request)
+        # Connect to RabbitMQ
+        connection = pika.BlockingConnection(
+            pika.ConnectionParameters(host=RABBITMQ_HOST)
+        )
+        channel = connection.channel()
 
-        print(f"\n✅ Task sent successfully!")
-        print(f"   Task ID: {result.id}")
+        # Declare queue (durable for persistence)
+        channel.queue_declare(queue='crawl_requests', durable=True)
+
+        # Publish message
+        channel.basic_publish(
+            exchange='',
+            routing_key='crawl_requests',
+            body=json.dumps(test_request),
+            properties=pika.BasicProperties(
+                delivery_mode=2,  # Make message persistent
+                content_type='application/json'
+            )
+        )
+
+        connection.close()
+
+        print(f"\n✅ Request sent successfully!")
         print(f"   Queue: crawl_requests")
         print(f"\n💡 Monitor progress:")
-        print(f"   docker-compose logs -f instagram-scraper")
-        print(f"   http://localhost:15672 (RabbitMQ Management)\n")
+        print(f"   tail -f worker.log")
+        print(f"   http://localhost:15672 (RabbitMQ Management)")
+        print(f"\n💡 Consume results:")
+        print(f"   python scripts/consume_results.py\n")
 
         return 0
 
     except Exception as e:
-        print(f"\n❌ Failed to send task: {e}")
-        print(f"\n💡 Make sure services are running:")
-        print(f"   docker-compose up -d\n")
+        print(f"\n❌ Failed to send request: {e}")
+        print(f"\n💡 Make sure RabbitMQ is running:")
+        print(f"   docker-compose up -d rabbitmq\n")
         return 1
 
 

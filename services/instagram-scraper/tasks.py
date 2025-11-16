@@ -1,4 +1,9 @@
-from celeryapp import app
+"""
+Helper functions for processing Instagram crawl requests.
+
+Note: This module no longer uses Celery. The worker is now in worker.py using pika.
+These functions can be used independently or by the worker.
+"""
 from instagram_crawler import InstagramCrawler
 from models import CrawlRequest, RawRecipeData
 import json
@@ -8,12 +13,16 @@ from config import RABBITMQ_HOST
 
 logger = logging.getLogger(__name__)
 
-@app.task(bind=True, name='crawl_instagram_post', max_retries=3)
-def crawl_instagram_post(self, request_data: dict):
+
+def crawl_instagram_post(request_data: dict) -> dict:
     """
-    Consume: crawl_requests queue
-    Process: Extract Instagram post data
-    Publish: raw_recipe_data queue
+    Process a crawl request for an Instagram post.
+
+    Args:
+        request_data: Dict containing instagram_url and optional request_id
+
+    Returns:
+        Dict with status and metadata about the crawl
     """
     try:
         logger.info(f"Processing crawl request: {request_data}")
@@ -27,7 +36,7 @@ def crawl_instagram_post(self, request_data: dict):
         # Extract post data using instaloader
         raw_data = crawler.extract_post_data(str(request.instagram_url))
 
-        # Publish to raw_recipe_data queue (plain JSON for TypeScript consumer)
+        # Publish to raw_recipe_data queue
         publish_raw_recipe_data(raw_data.model_dump())
 
         logger.info(f"Successfully processed Instagram post: {request.instagram_url}")
@@ -42,17 +51,14 @@ def crawl_instagram_post(self, request_data: dict):
 
     except Exception as exc:
         logger.error(f"Failed to process Instagram post {request_data.get('instagram_url', 'unknown')}: {exc}")
-
-        # Retry with exponential backoff
-        retry_countdown = 2 ** self.request.retries * 60  # 60s, 120s, 240s
-        raise self.retry(countdown=retry_countdown, exc=exc)
+        raise
 
 def publish_raw_recipe_data(raw_data: dict):
     """
     Publish extracted data to raw_recipe_data queue as plain JSON.
 
-    This publishes directly to RabbitMQ (not via Celery) so that the
-    TypeScript Recipe Schema Converter can consume plain JSON messages.
+    This publishes directly to RabbitMQ so that any consumer
+    (Python, TypeScript, etc.) can consume plain JSON messages.
 
     Messages are persisted (delivery_mode=2) and the queue is durable,
     so messages survive until consumed.
