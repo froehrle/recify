@@ -1,7 +1,7 @@
 """
 Helper functions for processing Instagram crawl requests.
 
-Note: This module no longer uses Celery. The worker is now in worker.py using pika.
+The worker implementation is in worker.py using pika.
 These functions can be used independently or by the worker.
 """
 from instagram_crawler import InstagramCrawler

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Send a message directly to RabbitMQ using Pika (bypasses Celery).
+Send a message directly to RabbitMQ using Pika.
 This is useful for testing the queue directly.
 """
 

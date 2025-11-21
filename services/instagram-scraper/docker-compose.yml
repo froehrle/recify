@@ -39,9 +39,6 @@ services:
       # INSTAGRAM_USERNAME: ${INSTAGRAM_USERNAME:-}
       # INSTAGRAM_SESSION_FILE: ${INSTAGRAM_SESSION_FILE:-session}
 
-      # Celery Configuration
-      CELERY_BROKER_URL: pyamqp://guest:guest@rabbitmq:5672//
-
       # Logging
       PYTHONUNBUFFERED: 1
     volumes:
@@ -50,29 +47,11 @@ services:
     networks:
       - instagram-network
     healthcheck:
-      test: ["CMD", "uv", "run", "celery", "-A", "celeryapp", "inspect", "ping"]
+      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
-
-  # Optional: Celery Flower for monitoring
-  flower:
-    build: .
-    container_name: instagram-flower
-    depends_on:
-      rabbitmq:
-        condition: service_healthy
-    ports:
-      - "5555:5555"
-    environment:
-      RABBITMQ_URL: pyamqp://guest:guest@rabbitmq:5672//
-      CELERY_BROKER_URL: pyamqp://guest:guest@rabbitmq:5672//
-    command: ["uv", "run", "celery", "-A", "celeryapp", "flower", "--port=5555"]
-    networks:
-      - instagram-network
-    profiles:
-      - monitoring
 
   # RabbitScout: Modern RabbitMQ Management UI
   rabbitscout:

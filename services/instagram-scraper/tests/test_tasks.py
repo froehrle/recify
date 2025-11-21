@@ -1,18 +1,18 @@
-"""Tests for tasks module (pika-based, no Celery)"""
+"""Tests for tasks module (pika-based worker functions)"""
 import pytest
 from unittest.mock import Mock, patch, MagicMock
 from datetime import datetime
 from pydantic import ValidationError
 import json
-from tasks import crawl_instagram_post, publish_raw_recipe_data
-from models import CrawlRequest, RawRecipeData
+from src.tasks import crawl_instagram_post, publish_raw_recipe_data
+from src.models import CrawlRequest, RawRecipeData
 
 
 class TestCrawlInstagramPost:
     """Test cases for crawl_instagram_post function"""
 
-    @patch('tasks.publish_raw_recipe_data')
-    @patch('tasks.InstagramCrawler')
+    @patch('src.tasks.publish_raw_recipe_data')
+    @patch('src.tasks.InstagramCrawler')
     def test_successful_crawl_and_publish(self, mock_crawler_class, mock_publish):
         """Test successful Instagram post crawling and publishing"""
         # Given: Valid request data
@@ -77,8 +77,8 @@ class TestCrawlInstagramPost:
         with pytest.raises(ValidationError):
             CrawlRequest(**request_data)
 
-    @patch('tasks.publish_raw_recipe_data')
-    @patch('tasks.InstagramCrawler')
+    @patch('src.tasks.publish_raw_recipe_data')
+    @patch('src.tasks.InstagramCrawler')
     def test_crawler_extraction_failure(self, mock_crawler_class, mock_publish):
         """Test handling when crawler.extract_post_data raises exception"""
         # Given: Crawler that raises Exception during extraction
@@ -100,7 +100,7 @@ class TestCrawlInstagramPost:
 class TestPublishRawRecipeData:
     """Test cases for publish_raw_recipe_data function"""
 
-    @patch('tasks.pika.BlockingConnection')
+    @patch('src.tasks.pika.BlockingConnection')
     def test_successful_data_publishing(self, mock_connection):
         """Test successful publishing of raw recipe data to RabbitMQ"""
         # Given: Valid raw_data dict
@@ -126,7 +126,7 @@ class TestPublishRawRecipeData:
         mock_channel.basic_publish.assert_called_once()
         mock_connection.return_value.close.assert_called_once()
 
-    @patch('tasks.pika.BlockingConnection')
+    @patch('src.tasks.pika.BlockingConnection')
     def test_message_published_with_correct_format(self, mock_connection):
         """Test message is published with correct JSON format"""
         # Given: Data with datetime timestamp
@@ -155,7 +155,7 @@ class TestPublishRawRecipeData:
         assert message['url'] == 'https://www.instagram.com/p/FORMAT/'
         assert message['timestamp'] == '2025-01-15T16:45:30'  # ISO format
 
-    @patch('tasks.pika.BlockingConnection')
+    @patch('src.tasks.pika.BlockingConnection')
     def test_message_persistence(self, mock_connection):
         """Test messages are published with persistence"""
         # Given: Valid data

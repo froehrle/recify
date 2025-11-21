@@ -2,7 +2,7 @@ install:
     uv sync --dev
 
 create-session:
-    uv run python create_session.py
+    uv run python scripts/create_session.py
 
 test:
     uv run pytest
@@ -17,7 +17,7 @@ test-integration:
     uv run pytest tests/test_integration.py -v
 
 test-worker:
-    uv run python -c "from worker import CrawlWorker; print('Worker imported successfully')"
+    uv run python -c "from src.worker import CrawlWorker; print('Worker imported successfully')"
 
 build:
     docker-compose build
@@ -41,10 +41,10 @@ health:
     docker-compose ps
 
 worker:
-    uv run python worker.py
+    uv run python src/worker.py
 
 worker-background:
-    nohup uv run python worker.py > worker.log 2>&1 &
+    nohup uv run python src/worker.py > worker.log 2>&1 &
     @echo "Worker started in background. Logs: tail -f worker.log"
 
 consume-results:
@@ -64,7 +64,7 @@ rabbitmq-ui:
 start-and-test:
     uv run python scripts/start_and_test.py
 
-send-event URL="https://www.instagram.com/p/DPWmEl0leJO/":
+send-event URL="https://www.instagram.com/p/DQUaP2sDJ2y/":
     uv run python scripts/send_test_event.py {{URL}}
 
 send-manual URL="https://www.instagram.com/p/DITcnygqFll/":

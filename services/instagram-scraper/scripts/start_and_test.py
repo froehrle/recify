@@ -12,7 +12,8 @@ This script:
 import subprocess
 import time
 import sys
-from tasks import crawl_instagram_post
+import json
+import pika
 
 
 def run_command(cmd, description):
@@ -107,10 +108,26 @@ def main():
     print(f"   Priority: {test_request['priority']}")
 
     try:
-        # Send the task to the queue
-        result = crawl_instagram_post.delay(test_request)
+        # Send message directly to RabbitMQ
+        connection = pika.BlockingConnection(
+            pika.ConnectionParameters(host='localhost')
+        )
+        channel = connection.channel()
+        channel.queue_declare(queue='crawl_requests', durable=True)
+
+        channel.basic_publish(
+            exchange='',
+            routing_key='crawl_requests',
+            body=json.dumps(test_request),
+            properties=pika.BasicProperties(
+                delivery_mode=2,
+                content_type='application/json'
+            )
+        )
+
+        connection.close()
+
         print(f"\n✅ Task sent successfully!")
-        print(f"   Task ID: {result.id}")
         print(f"   Queue: crawl_requests")
     except Exception as e:
         print(f"\n❌ Failed to send task: {e}")
@@ -132,14 +149,10 @@ def main():
    Username: guest
    Password: guest
 
-4. Celery Flower (if started with monitoring profile):
-   docker-compose --profile monitoring up -d
-   http://localhost:5555
-
-5. Check queue status:
+4. Check queue status:
    docker-compose exec rabbitmq rabbitmqctl list_queues
 
-6. Stop services:
+5. Stop services:
    docker-compose down
     """)
 

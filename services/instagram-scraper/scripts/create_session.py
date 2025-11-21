@@ -5,7 +5,7 @@ Script to create Instagram session file for instaloader
 
 import instaloader
 import os
-from config import INSTAGRAM_SESSION_FILE
+from src.config import (INSTAGRAM_SESSION_FILE)
 
 def create_instagram_session():
     """Create Instagram session file"""

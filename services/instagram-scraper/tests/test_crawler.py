@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import Mock
-from instagram_crawler import InstagramCrawler
+from src.instagram_crawler import InstagramCrawler
 
 class TestInstagramCrawler:
     """Unit tests for InstagramCrawler methods"""

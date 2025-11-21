@@ -1,8 +1,8 @@
 import pytest
 from unittest.mock import Mock, patch
 from datetime import datetime
-from instagram_crawler import InstagramCrawler
-from models import RawRecipeData
+from src.instagram_crawler import InstagramCrawler
+from src.models import RawRecipeData
 
 class TestInstagramCrawlerIntegration:
     """Integration tests for Instagram post caption extraction"""
@@ -11,7 +11,7 @@ class TestInstagramCrawlerIntegration:
         """Set up test fixtures"""
         self.crawler = InstagramCrawler()
 
-    @patch('instagram_crawler.instaloader.Post.from_shortcode')
+    @patch('src.instagram_crawler.instaloader.Post.from_shortcode')
     def test_instagram_post_extraction_with_caption(self, mock_from_shortcode):
         """
         Integration test: Input Instagram URL, expect caption extraction
@@ -55,7 +55,7 @@ class TestInstagramCrawlerIntegration:
         assert result.media_urls == ["https://instagram.com/media1.jpg"]
         assert result.author_top_comment == "Here's the full recipe: 1. Boil pasta 2. Make sauce 3. Combine!"
 
-    @patch('instagram_crawler.instaloader.Post.from_shortcode')
+    @patch('src.instagram_crawler.instaloader.Post.from_shortcode')
     def test_instagram_reel_extraction(self, mock_from_shortcode):
         """Test extraction from Instagram Reel URL"""
         # Mock Instagram reel data
@@ -86,7 +86,7 @@ class TestInstagramCrawlerIntegration:
         assert result.hashtags == ["quickrecipe"]
         assert result.author_top_comment is None  # No author comments
 
-    @patch('instagram_crawler.instaloader.Post.from_shortcode')
+    @patch('src.instagram_crawler.instaloader.Post.from_shortcode')
     def test_instagram_carousel_post_extraction(self, mock_from_shortcode):
         """Test extraction from carousel post with multiple media"""
         # Mock carousel post
@@ -145,7 +145,7 @@ class TestInstagramCrawlerIntegration:
         with pytest.raises(ValueError, match="Invalid Instagram URL format"):
             self.crawler._extract_shortcode("https://www.facebook.com/invalid")
 
-    @patch('instagram_crawler.instaloader.Post.from_shortcode')
+    @patch('src.instagram_crawler.instaloader.Post.from_shortcode')
     def test_instagram_post_extraction_network_error(self, mock_from_shortcode):
         """Test error handling when Instagram API fails"""
         # Mock network error
@@ -157,7 +157,7 @@ class TestInstagramCrawlerIntegration:
         with pytest.raises(Exception, match="Failed to extract Instagram post: Network error"):
             self.crawler.extract_post_data(test_url)
 
-    @patch('instagram_crawler.instaloader.Post.from_shortcode')
+    @patch('src.instagram_crawler.instaloader.Post.from_shortcode')
     def test_instagram_post_no_caption(self, mock_from_shortcode):
         """Test handling posts without captions"""
         mock_post = Mock()
@@ -183,7 +183,7 @@ class TestInstagramCrawlerIntegration:
         assert result.hashtags == []
         assert result.mentions == []
 
-    @patch('instagram_crawler.instaloader.Post.from_shortcode')
+    @patch('src.instagram_crawler.instaloader.Post.from_shortcode')
     def test_author_comment_extraction_comments_disabled(self, mock_from_shortcode):
         """Test handling when comments are disabled"""
         mock_post = Mock()

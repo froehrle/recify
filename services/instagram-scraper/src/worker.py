@@ -11,7 +11,8 @@ import json
 import logging
 import signal
 import sys
-from instagram_crawler import InstagramCrawler
+import time
+from instagram_crawler import InstagramCrawler, InstagramRateLimitError
 from models import CrawlRequest, RawRecipeData
 from config import RABBITMQ_HOST
 
@@ -30,6 +31,7 @@ class CrawlWorker:
         self.channel = None
         self.crawler = InstagramCrawler()
         self.should_stop = False
+        self.rate_limit_cooldown = 60  # seconds to wait after rate limit
 
     def connect(self):
         """Establish connection to RabbitMQ"""
@@ -42,6 +44,9 @@ class CrawlWorker:
         # Declare queues (durable for persistence)
         self.channel.queue_declare(queue='crawl_requests', durable=True)
         self.channel.queue_declare(queue='raw_recipe_data', durable=True)
+
+        # Declare dead letter queue for failed messages
+        self.channel.queue_declare(queue='crawl_requests_failed', durable=True)
 
         # Process one message at a time (QoS)
         self.channel.basic_qos(prefetch_count=1)
@@ -76,6 +81,7 @@ class CrawlWorker:
 
     def process_message(self, ch, method, properties, body):
         """Process a single crawl request message"""
+        instagram_url = "unknown"
         try:
             # Parse message
             raw_data = json.loads(body.decode())
@@ -94,7 +100,8 @@ class CrawlWorker:
             else:
                 raise ValueError(f"Invalid message format: expected dict or list, got {type(raw_data)}")
 
-            logger.info(f"Processing crawl request: {request_data.get('instagram_url', 'unknown')}")
+            instagram_url = request_data.get('instagram_url', 'unknown')
+            logger.info(f"Processing crawl request: {instagram_url}")
 
             # Validate request data
             request = CrawlRequest(**request_data)
@@ -108,13 +115,68 @@ class CrawlWorker:
             # Acknowledge message after successful processing
             ch.basic_ack(delivery_tag=method.delivery_tag)
 
-            logger.info(f"Successfully processed: {request.instagram_url}")
+            logger.info(f"✅ Successfully processed: {request.instagram_url}")
+
+        except InstagramRateLimitError as exc:
+            # Rate limit error - don't requeue, move to failed queue
+            logger.warning(f"⚠️  Instagram rate limit hit for {instagram_url}. Message moved to failed queue.")
+            logger.warning(f"   Cooling down for {self.rate_limit_cooldown}s before processing next message...")
+
+            # Move to failed queue for manual review
+            self._move_to_failed_queue(body, str(exc))
+            ch.basic_ack(delivery_tag=method.delivery_tag)
+
+            # Wait before processing next message to respect rate limits
+            time.sleep(self.rate_limit_cooldown)
+
+        except ValueError as exc:
+            # Validation errors - don't requeue
+            logger.error(f"❌ Invalid message format for {instagram_url}: {exc}")
+            self._move_to_failed_queue(body, str(exc))
+            ch.basic_ack(delivery_tag=method.delivery_tag)
 
         except Exception as exc:
-            logger.error(f"Failed to process message: {exc}", exc_info=True)
+            # Other errors - check retry count and potentially requeue
+            retry_count = self._get_retry_count(properties)
+            max_retries = 3
 
-            # Reject and requeue for retry (could implement max retry logic here)
-            ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
+            if retry_count >= max_retries:
+                logger.error(f"❌ Failed after {retry_count} retries for {instagram_url}: {exc}")
+                self._move_to_failed_queue(body, str(exc))
+                ch.basic_ack(delivery_tag=method.delivery_tag)
+            else:
+                logger.warning(f"⚠️  Error processing {instagram_url} (retry {retry_count + 1}/{max_retries}): {exc}")
+                # Requeue with incremented retry count
+                new_headers = properties.headers or {}
+                new_headers['x-retry-count'] = retry_count + 1
+                ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
+
+    def _get_retry_count(self, properties) -> int:
+        """Get retry count from message headers"""
+        if properties and properties.headers and 'x-retry-count' in properties.headers:
+            return properties.headers['x-retry-count']
+        return 0
+
+    def _move_to_failed_queue(self, original_body: bytes, error_msg: str):
+        """Move failed message to dead letter queue"""
+        try:
+            failed_message = {
+                'original_message': json.loads(original_body.decode()),
+                'error': error_msg,
+                'timestamp': time.time()
+            }
+
+            self.channel.basic_publish(
+                exchange='',
+                routing_key='crawl_requests_failed',
+                body=json.dumps(failed_message),
+                properties=pika.BasicProperties(
+                    delivery_mode=2,
+                    content_type='application/json'
+                )
+            )
+        except Exception as e:
+            logger.error(f"Failed to move message to failed queue: {e}")
 
     def start(self):
         """Start consuming messages"""

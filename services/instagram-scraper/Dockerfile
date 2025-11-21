@@ -22,4 +22,4 @@ USER app
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD python -c "import sys; sys.exit(0)"
 
-CMD ["uv", "run", "celery", "-A", "celeryapp", "worker", "--loglevel=info"]
+CMD [".venv/bin/python", "src/worker.py"]

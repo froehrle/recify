@@ -1,6 +1,6 @@
 # Instagram Scraper Service
 
-A microservice that extracts recipe data from Instagram posts using Celery and RabbitMQ.
+A microservice that extracts recipe data from Instagram posts using RabbitMQ.
 
 ## Features
 
@@ -9,7 +9,6 @@ A microservice that extracts recipe data from Instagram posts using Celery and R
 - **Comment Extraction**: Finds author's most liked comment
 - **Multiple Formats**: Supports posts, reels, and carousels
 - **Docker Ready**: Complete containerized setup
-- **Monitoring**: Celery Flower dashboard
 - **Health Checks**: Built-in service health monitoring
 
 ## Quick Start
@@ -24,8 +23,6 @@ just start-instagram-service
 # View logs
 just logs-instagram-scraper
 
-# With monitoring dashboard
-just start-instagram-with-monitoring
 ```
 
 ### Option 2: Local Development
@@ -123,7 +120,6 @@ uv run black .
 
 - **RabbitMQ Management** (default): http://localhost:15672 (guest/guest)
 - **RabbitScout** (modern UI): http://localhost:3000
-- **Celery Flower**: http://localhost:5555 (when monitoring enabled)
 
 ### Health Checks
 

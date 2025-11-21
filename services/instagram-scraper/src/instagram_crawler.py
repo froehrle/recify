@@ -3,10 +3,21 @@ from models import RawRecipeData
 from typing import Optional
 from config import INSTAGRAM_SESSION_FILE, INSTAGRAM_USERNAME
 import os
+import logging
+
+# Suppress instaloader's verbose retry messages
+logging.getLogger('instaloader').setLevel(logging.ERROR)
+
+class InstagramRateLimitError(Exception):
+    """Raised when Instagram rate limits are hit (401/403)"""
+    pass
 
 class InstagramCrawler:
     def __init__(self, use_session: bool = True):
-        self.loader = instaloader.Instaloader()
+        self.loader = instaloader.Instaloader(
+            quiet=True,  # Suppress output messages
+            max_connection_attempts=10
+        )
         # Configure instaloader for minimal footprint
         self.loader.download_pictures = False
         self.loader.download_videos = False
@@ -57,6 +68,12 @@ class InstagramCrawler:
 
             return raw_data
 
+        except instaloader.exceptions.ConnectionException as e:
+            error_msg = str(e)
+            # Check for rate limit errors
+            if '401' in error_msg or '403' in error_msg or 'rate limit' in error_msg.lower():
+                raise InstagramRateLimitError(f"Instagram rate limit: {error_msg}")
+            raise Exception(f"Instagram connection error: {error_msg}")
         except Exception as e:
             raise Exception(f"Failed to extract Instagram post: {str(e)}")
 
