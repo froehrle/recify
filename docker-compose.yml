@@ -1,6 +1,6 @@
 services:
   rabbitmq:
-    image: rabbitmq:3.11-management
+    build: ./rabbitmq
     container_name: instagram-rabbitmq
     ports:
       - "5672:5672"      # AMQP port
@@ -13,14 +13,14 @@ services:
       - rabbitmq_logs:/var/log/rabbitmq
     healthcheck:
       test: ["CMD", "rabbitmqctl", "status"]
-      interval: 30s
+      interval: 10s
       timeout: 10s
       retries: 5
     networks:
       - instagram-network
 
   instagram-scraper:
-    build: .
+    build: ./services/instagram-scraper
     container_name: instagram-scraper-worker
     depends_on:
       rabbitmq:
@@ -40,7 +40,7 @@ services:
       # Logging
       PYTHONUNBUFFERED: 1
     volumes:
-      - ./instagram_sessions:/app/sessions:rw  # For session persistence
+      - ./services/instagram-scraper/instagram_sessions:/app/sessions:rw  # For session persistence
     restart: unless-stopped
     networks:
       - instagram-network

@@ -1,0 +1,19 @@
+{
+  "name": "recify",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "asyncapi:bundle": "./scripts/bundle-asyncapi.sh",
+    "asyncapi:generate": "asyncapi generate fromTemplate asyncapi-bundled.yaml @asyncapi/nodejs-template -o generated/asyncapi --force-write --param server=production",
+    "asyncapi:build": "bun run asyncapi:bundle && bun run asyncapi:generate"
+  },
+  "devDependencies": {
+    "@asyncapi/cli": "^4.1.1",
+    "@asyncapi/nodejs-template": "^3.0.4",
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(tree:*)",
+      "Bash(bun run asyncapi:bundle:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
