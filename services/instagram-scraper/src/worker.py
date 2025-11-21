@@ -41,12 +41,32 @@ class CrawlWorker:
         )
         self.channel = self.connection.channel()
 
-        # Declare queues (durable for persistence)
+        # Declare main queues (durable for persistence)
         self.channel.queue_declare(queue='crawl_requests', durable=True)
         self.channel.queue_declare(queue='raw_recipe_data', durable=True)
-
-        # Declare dead letter queue for failed messages
         self.channel.queue_declare(queue='crawl_requests_failed', durable=True)
+
+        # Declare delay queues with TTL for exponential backoff
+        # Messages expire and route back to main queue via dead-letter
+        delay_configs = [
+            (30, "30s"),      # 30 seconds - quick retry for transient errors
+            (300, "5m"),      # 5 minutes - rate limit initial cooldown
+            (900, "15m"),     # 15 minutes - extended rate limit
+            (3600, "1h")      # 1 hour - maximum backoff
+        ]
+
+        for delay_seconds, label in delay_configs:
+            queue_name = f'crawl_requests_retry_{delay_seconds}s'
+            self.channel.queue_declare(
+                queue=queue_name,
+                durable=True,
+                arguments={
+                    'x-message-ttl': delay_seconds * 1000,  # Convert to milliseconds
+                    'x-dead-letter-exchange': '',  # Use default exchange
+                    'x-dead-letter-routing-key': 'crawl_requests'  # Route back to main queue
+                }
+            )
+            logger.info(f"Declared delay queue: {queue_name} (TTL: {label})")
 
         # Process one message at a time (QoS)
         self.channel.basic_qos(prefetch_count=1)
@@ -118,44 +138,94 @@ class CrawlWorker:
             logger.info(f"✅ Successfully processed: {request.instagram_url}")
 
         except InstagramRateLimitError as exc:
-            # Rate limit error - don't requeue, move to failed queue
-            logger.warning(f"⚠️  Instagram rate limit hit for {instagram_url}. Message moved to failed queue.")
-            logger.warning(f"   Cooling down for {self.rate_limit_cooldown}s before processing next message...")
+            # Rate limit error - use long delay with exponential backoff
+            retry_count = self._get_retry_count(properties)
+            logger.warning(f"⚠️  Instagram rate limit hit for {instagram_url}")
 
-            # Move to failed queue for manual review
-            self._move_to_failed_queue(body, str(exc))
+            # Schedule retry with long delay
+            self._schedule_retry(body, properties, retry_count, delay_type='long', error=str(exc))
             ch.basic_ack(delivery_tag=method.delivery_tag)
 
-            # Wait before processing next message to respect rate limits
-            time.sleep(self.rate_limit_cooldown)
-
         except ValueError as exc:
-            # Validation errors - don't requeue
+            # Validation errors - don't retry, these won't succeed
             logger.error(f"❌ Invalid message format for {instagram_url}: {exc}")
             self._move_to_failed_queue(body, str(exc))
             ch.basic_ack(delivery_tag=method.delivery_tag)
 
         except Exception as exc:
-            # Other errors - check retry count and potentially requeue
+            # Other errors - use short delay for transient issues
             retry_count = self._get_retry_count(properties)
-            max_retries = 3
+            logger.warning(f"⚠️  Error processing {instagram_url}: {exc}")
 
-            if retry_count >= max_retries:
-                logger.error(f"❌ Failed after {retry_count} retries for {instagram_url}: {exc}")
-                self._move_to_failed_queue(body, str(exc))
-                ch.basic_ack(delivery_tag=method.delivery_tag)
-            else:
-                logger.warning(f"⚠️  Error processing {instagram_url} (retry {retry_count + 1}/{max_retries}): {exc}")
-                # Requeue with incremented retry count
-                new_headers = properties.headers or {}
-                new_headers['x-retry-count'] = retry_count + 1
-                ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
+            # Schedule retry with short delay
+            self._schedule_retry(body, properties, retry_count, delay_type='short', error=str(exc))
+            ch.basic_ack(delivery_tag=method.delivery_tag)
 
     def _get_retry_count(self, properties) -> int:
         """Get retry count from message headers"""
         if properties and properties.headers and 'x-retry-count' in properties.headers:
             return properties.headers['x-retry-count']
         return 0
+
+    def _schedule_retry(self, body: bytes, properties, retry_count: int, delay_type: str = 'short', error: str = ''):
+        """
+        Schedule a delayed retry or move to failed queue.
+
+        Args:
+            body: Original message body
+            properties: Message properties
+            retry_count: Current retry count
+            delay_type: 'short' for transient errors, 'long' for rate limits
+            error: Error message for logging
+        """
+        max_retries = 3
+
+        if retry_count >= max_retries:
+            logger.error(f"❌ Max retries ({max_retries}) reached. Moving to failed queue.")
+            self._move_to_failed_queue(body, f"Max retries exceeded. Last error: {error}")
+            return
+
+        # Choose delay based on error type and retry count
+        if delay_type == 'long':
+            # Exponential backoff for rate limits: 5min → 15min → 1hour
+            delay_seconds = [300, 900, 3600][min(retry_count, 2)]
+        else:
+            # Short delays for transient errors: 30s → 5min → 15min
+            delay_seconds = [30, 300, 900][min(retry_count, 2)]
+
+        retry_queue = f'crawl_requests_retry_{delay_seconds}s'
+
+        # Update message headers
+        new_headers = properties.headers or {}
+        new_headers['x-retry-count'] = retry_count + 1
+        new_headers['x-first-attempt'] = new_headers.get('x-first-attempt', int(time.time()))
+        new_headers['x-last-error'] = error[:500]  # Truncate long errors
+
+        # Calculate time labels for logging
+        if delay_seconds < 60:
+            delay_label = f"{delay_seconds}s"
+        elif delay_seconds < 3600:
+            delay_label = f"{delay_seconds // 60}m"
+        else:
+            delay_label = f"{delay_seconds // 3600}h"
+
+        logger.info(f"🔄 Scheduling retry {retry_count + 1}/{max_retries} in {delay_label} (queue: {retry_queue})")
+
+        try:
+            # Publish to delay queue (will auto-route back to main queue after TTL)
+            self.channel.basic_publish(
+                exchange='',
+                routing_key=retry_queue,
+                body=body,
+                properties=pika.BasicProperties(
+                    delivery_mode=2,  # Persistent
+                    content_type='application/json',
+                    headers=new_headers
+                )
+            )
+        except Exception as e:
+            logger.error(f"Failed to schedule retry: {e}")
+            self._move_to_failed_queue(body, f"Retry scheduling failed: {e}")
 
     def _move_to_failed_queue(self, original_body: bytes, error_msg: str):
         """Move failed message to dead letter queue"""
@@ -175,6 +245,7 @@ class CrawlWorker:
                     content_type='application/json'
                 )
             )
+            logger.info(f"📦 Message moved to failed queue")
         except Exception as e:
             logger.error(f"Failed to move message to failed queue: {e}")
 

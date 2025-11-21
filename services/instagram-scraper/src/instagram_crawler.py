@@ -88,14 +88,22 @@ class InstagramCrawler:
             raise ValueError(f"Invalid Instagram URL format: {url}")
 
     def _extract_media_urls(self, post) -> list[str]:
-        """Extract media URLs from post"""
+        """Extract media URLs from post (including videos)"""
         media_urls = []
-        if post.url:
+
+        # Add main post media (image or video)
+        if post.is_video and post.video_url:
+            media_urls.append(post.video_url)
+        elif post.url:
             media_urls.append(post.url)
-        # Handle carousel posts
+
+        # Handle carousel posts (images and videos)
         for node in post.get_sidecar_nodes():
-            if node.display_url:
+            if node.is_video and node.video_url:
+                media_urls.append(node.video_url)
+            elif node.display_url:
                 media_urls.append(node.display_url)
+
         return media_urls
 
     def _extract_author_top_comment(self, post) -> Optional[str]:

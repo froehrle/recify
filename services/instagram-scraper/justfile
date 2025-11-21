@@ -75,3 +75,20 @@ generate-asyncapi-docs:
 
 validate-asyncapi:
     asyncapi validate asyncapi.yaml
+
+# Monitor RabbitMQ queues (watch mode)
+watch-queues:
+    watch -n 2 'docker exec instagram-rabbitmq rabbitmqctl list_queues name messages'
+
+# List all queues with configuration details
+list-queues:
+    docker exec instagram-rabbitmq rabbitmqctl list_queues name messages arguments
+
+# Check failed messages count
+check-failed:
+    @echo "Queue status:"
+    @docker exec instagram-rabbitmq rabbitmqctl list_queues name messages | grep -E "(crawl_requests|failed|retry)"
+
+# View worker logs in real-time
+logs-worker:
+    docker logs -f instagram-scraper-worker
