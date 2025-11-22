@@ -1,0 +1,94 @@
+install:
+    uv sync --dev
+
+create-session:
+    uv run python scripts/create_session.py
+
+test:
+    uv run pytest
+
+test-unit:
+    uv run pytest tests/test_crawler.py -v
+
+test-tasks:
+    uv run pytest tests/test_tasks.py -v
+
+test-integration:
+    uv run pytest tests/test_integration.py -v
+
+test-worker:
+    uv run python -c "from src.worker import CrawlWorker; print('Worker imported successfully')"
+
+build:
+    docker-compose build
+
+start-rabbitmq:
+    docker-compose up rabbitmq -d
+
+start:
+    docker-compose up -d
+
+start-with-monitoring:
+    docker-compose --profile monitoring up -d
+
+stop:
+    docker-compose down
+
+clean:
+    docker-compose down -v
+
+health:
+    docker-compose ps
+
+worker:
+    uv run python src/worker.py
+
+worker-background:
+    nohup uv run python src/worker.py > worker.log 2>&1 &
+    @echo "Worker started in background. Logs: tail -f worker.log"
+
+consume-results:
+    uv run python scripts/consume_results.py
+
+logs:
+    tail -f worker.log
+
+logs-rabbitmq:
+    docker-compose logs -f rabbitmq
+
+rabbitmq-ui:
+    @echo "RabbitMQ Management UI: http://localhost:15672"
+    @echo "Username: guest"
+    @echo "Password: guest"
+
+start-and-test:
+    uv run python scripts/start_and_test.py
+
+send-event URL="https://www.instagram.com/p/DQUaP2sDJ2y/":
+    uv run python scripts/send_test_event.py {{URL}}
+
+send-manual URL="https://www.instagram.com/p/DITcnygqFll/":
+    uv run python scripts/send_manual_request.py {{URL}}
+
+generate-asyncapi-docs:
+    bash scripts/generate_asyncapi_docs.sh
+
+validate-asyncapi:
+    asyncapi validate asyncapi.yaml
+
+# Monitor RabbitMQ queues (watch mode)
+watch-queues:
+    watch -n 2 'docker exec instagram-rabbitmq rabbitmqctl list_queues name messages'
+
+# List all queues with configuration details
+list-queues:
+    docker exec instagram-rabbitmq rabbitmqctl list_queues name messages arguments
+
+# Check failed messages count
+check-failed:
+    @echo "Queue status:"
+    @docker exec instagram-rabbitmq rabbitmqctl list_queues name messages | grep -E "(crawl_requests|failed|retry)"
+
+# View worker logs in real-time
+logs-worker:
+    docker logs -f instagram-scraper-worker

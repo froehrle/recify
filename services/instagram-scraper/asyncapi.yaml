@@ -1,0 +1,228 @@
+asyncapi: 3.0.0
+info:
+  title: Instagram Scraper Service
+  version: 1.0.0
+  description: |
+    Microservice that consumes Instagram post URLs from RabbitMQ,
+    extracts recipe data using instaloader, and publishes the raw data
+    to the next service in the pipeline.
+  contact:
+    name: API Support
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
+
+servers:
+  production:
+    host: localhost:5672
+    protocol: amqp
+    description: RabbitMQ broker
+    variables:
+      port:
+        default: '5672'
+        description: RabbitMQ port
+
+channels:
+  crawl_requests:
+    address: crawl_requests
+    description: Queue for incoming Instagram crawl requests
+    messages:
+      CrawlRequest:
+        $ref: '#/components/messages/CrawlRequest'
+
+  raw_recipe_data:
+    address: raw_recipe_data
+    description: Queue for outgoing raw recipe data extracted from Instagram
+    messages:
+      RawRecipeData:
+        $ref: '#/components/messages/RawRecipeData'
+
+operations:
+  crawlInstagramPost:
+    action: receive
+    channel:
+      $ref: '#/channels/crawl_requests'
+    summary: Consume crawl requests from the queue
+    description: |
+      Receives Instagram post URLs to crawl and extract recipe data.
+      The task will retry up to 3 times with exponential backoff (60s, 120s, 240s)
+      if extraction fails.
+    messages:
+      - $ref: '#/channels/crawl_requests/messages/CrawlRequest'
+
+  publishRawRecipeData:
+    action: send
+    channel:
+      $ref: '#/channels/raw_recipe_data'
+    summary: Publish extracted raw recipe data
+    description: |
+      Publishes successfully extracted Instagram post data to the raw_recipe_data queue
+      for further processing by the Recipe Schema Converter service.
+    messages:
+      - $ref: '#/channels/raw_recipe_data/messages/RawRecipeData'
+
+components:
+  messages:
+    CrawlRequest:
+      name: CrawlRequest
+      title: Instagram Crawl Request
+      summary: Request to crawl an Instagram post for recipe data
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/CrawlRequestPayload'
+      examples:
+        - name: BasicRequest
+          summary: Basic crawl request with just URL
+          payload:
+            instagram_url: https://www.instagram.com/p/ABC123DEF456/
+        - name: FullRequest
+          summary: Crawl request with all fields
+          payload:
+            instagram_url: https://www.instagram.com/reel/XYZ789ABC123/
+            request_id: req-12345
+            priority: 2
+
+    RawRecipeData:
+      name: RawRecipeData
+      title: Raw Recipe Data
+      summary: Extracted raw data from Instagram post
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/RawRecipeDataPayload'
+      examples:
+        - name: CompleteRecipe
+          summary: Complete extracted recipe data
+          payload:
+            url: https://www.instagram.com/p/ABC123DEF456/
+            caption: "Delicious homemade pasta! 🍝\n\nIngredients:\n- 400g flour\n- 4 eggs"
+            media_urls:
+              - https://instagram.com/image1.jpg
+              - https://instagram.com/image2.jpg
+            author: chef_mario
+            timestamp: '2025-01-15T12:00:00Z'
+            hashtags:
+              - pasta
+              - homemade
+              - recipe
+            mentions:
+              - foodblogger
+            likes_count: 1250
+            comments_count: 42
+            author_top_comment: "Thanks for all the love! Recipe details in bio!"
+
+  schemas:
+    CrawlRequestPayload:
+      type: object
+      required:
+        - instagram_url
+      properties:
+        instagram_url:
+          type: string
+          format: uri
+          pattern: '^https://www\.instagram\.com/(p|reel)/'
+          description: Instagram post or reel URL to crawl
+          examples:
+            - https://www.instagram.com/p/ABC123DEF456/
+            - https://www.instagram.com/reel/XYZ789ABC123/
+        request_id:
+          type: string
+          description: Optional unique identifier for this request
+          examples:
+            - req-12345
+            - crawl-2025-01-15-001
+        priority:
+          type: integer
+          default: 1
+          minimum: 1
+          maximum: 10
+          description: Priority level for processing (1=low, 10=high)
+          examples:
+            - 1
+            - 5
+
+    RawRecipeDataPayload:
+      type: object
+      required:
+        - url
+        - caption
+        - media_urls
+        - author
+        - timestamp
+        - hashtags
+        - mentions
+      properties:
+        url:
+          type: string
+          format: uri
+          description: Original Instagram post URL
+          examples:
+            - https://www.instagram.com/p/ABC123DEF456/
+        caption:
+          type: string
+          description: Full post caption text (may contain recipe instructions)
+          examples:
+            - "Delicious homemade pasta! 🍝\n\nIngredients:\n- 400g flour\n- 4 eggs"
+        media_urls:
+          type: array
+          description: URLs of all images/videos in the post (including carousel items)
+          items:
+            type: string
+            format: uri
+          minItems: 0
+          examples:
+            - ["https://instagram.com/image1.jpg"]
+            - ["https://instagram.com/img1.jpg", "https://instagram.com/img2.jpg"]
+        author:
+          type: string
+          description: Instagram username of the post author
+          examples:
+            - chef_mario
+            - foodblogger_jane
+        timestamp:
+          type: string
+          format: date-time
+          description: Post creation timestamp in ISO 8601 format
+          examples:
+            - '2025-01-15T12:00:00Z'
+        hashtags:
+          type: array
+          description: List of hashtags used in the post (without # symbol)
+          items:
+            type: string
+          examples:
+            - ["pasta", "homemade", "recipe"]
+        mentions:
+          type: array
+          description: List of mentioned usernames (without @ symbol)
+          items:
+            type: string
+          examples:
+            - ["foodblogger", "chef_friend"]
+        likes_count:
+          type: integer
+          nullable: true
+          description: Number of likes on the post (null if unavailable)
+          minimum: 0
+          examples:
+            - 1250
+            - null
+        comments_count:
+          type: integer
+          nullable: true
+          description: Number of comments on the post (null if unavailable)
+          minimum: 0
+          examples:
+            - 42
+            - null
+        author_top_comment:
+          type: string
+          nullable: true
+          description: Most-liked comment by the post author (often contains recipe details)
+          examples:
+            - "Thanks for all the love! Recipe details in bio!"
+            - null
+
+  securitySchemes:
+    rabbitmqAuth:
+      type: userPassword
+      description: Username and password for RabbitMQ authentication
