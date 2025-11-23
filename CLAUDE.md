@@ -1,0 +1,6 @@
+- You can find the documentation of the library instaloader here: https://instaloader.github.io/
+- You can find documentation about AsyncAPI Generator and Bundling in: @docs/ASYNCAPI.md
+- Add successful commands to the @Justfile
+- This project uses bun as a package manager
+- Whenever you require the project structure use the `tree` command for lookup 
+- 
