@@ -46,27 +46,28 @@ class CrawlWorker:
         self.channel.queue_declare(queue='raw_recipe_data', durable=True)
         self.channel.queue_declare(queue='crawl_requests_failed', durable=True)
 
-        # Declare delay queues with TTL for exponential backoff
-        # Messages expire and route back to main queue via dead-letter
-        delay_configs = [
-            (30, "30s"),      # 30 seconds - quick retry for transient errors
-            (300, "5m"),      # 5 minutes - rate limit initial cooldown
-            (900, "15m"),     # 15 minutes - extended rate limit
-            (3600, "1h")      # 1 hour - maximum backoff
-        ]
-
-        for delay_seconds, label in delay_configs:
-            queue_name = f'crawl_requests_retry_{delay_seconds}s'
-            self.channel.queue_declare(
-                queue=queue_name,
-                durable=True,
-                arguments={
-                    'x-message-ttl': delay_seconds * 1000,  # Convert to milliseconds
-                    'x-dead-letter-exchange': '',  # Use default exchange
-                    'x-dead-letter-routing-key': 'crawl_requests'  # Route back to main queue
-                }
+        # Declare delayed message exchange (requires rabbitmq_delayed_message_exchange plugin)
+        # This replaces the 4 delay queues with a single exchange
+        try:
+            self.channel.exchange_declare(
+                exchange='delayed_exchange',
+                exchange_type='x-delayed-message',
+                arguments={'x-delayed-type': 'direct'},
+                durable=True
             )
-            logger.info(f"Declared delay queue: {queue_name} (TTL: {label})")
+            logger.info("Declared delayed exchange (x-delayed-message)")
+
+            # Bind main queue to delayed exchange
+            self.channel.queue_bind(
+                queue='crawl_requests',
+                exchange='delayed_exchange',
+                routing_key='crawl_requests'
+            )
+            logger.info("Bound crawl_requests queue to delayed_exchange")
+
+        except Exception as e:
+            logger.error(f"Failed to declare delayed exchange. Is the plugin enabled? Error: {e}")
+            raise
 
         # Process one message at a time (QoS)
         self.channel.basic_qos(prefetch_count=1)
@@ -169,7 +170,7 @@ class CrawlWorker:
 
     def _schedule_retry(self, body: bytes, properties, retry_count: int, delay_type: str = 'short', error: str = ''):
         """
-        Schedule a delayed retry or move to failed queue.
+        Schedule a delayed retry using RabbitMQ delayed message exchange.
 
         Args:
             body: Original message body
@@ -185,23 +186,23 @@ class CrawlWorker:
             self._move_to_failed_queue(body, f"Max retries exceeded. Last error: {error}")
             return
 
-        # Choose delay based on error type and retry count
+        # Choose delay based on error type and retry count (in milliseconds)
         if delay_type == 'long':
             # Exponential backoff for rate limits: 5min → 15min → 1hour
-            delay_seconds = [300, 900, 3600][min(retry_count, 2)]
+            delay_ms = [300000, 900000, 3600000][min(retry_count, 2)]
         else:
             # Short delays for transient errors: 30s → 5min → 15min
-            delay_seconds = [30, 300, 900][min(retry_count, 2)]
-
-        retry_queue = f'crawl_requests_retry_{delay_seconds}s'
+            delay_ms = [30000, 300000, 900000][min(retry_count, 2)]
 
         # Update message headers
         new_headers = properties.headers or {}
         new_headers['x-retry-count'] = retry_count + 1
         new_headers['x-first-attempt'] = new_headers.get('x-first-attempt', int(time.time()))
         new_headers['x-last-error'] = error[:500]  # Truncate long errors
+        new_headers['x-delay'] = delay_ms  # Delayed message exchange uses this header
 
         # Calculate time labels for logging
+        delay_seconds = delay_ms // 1000
         if delay_seconds < 60:
             delay_label = f"{delay_seconds}s"
         elif delay_seconds < 3600:
@@ -209,13 +210,14 @@ class CrawlWorker:
         else:
             delay_label = f"{delay_seconds // 3600}h"
 
-        logger.info(f"🔄 Scheduling retry {retry_count + 1}/{max_retries} in {delay_label} (queue: {retry_queue})")
+        logger.info(f"🔄 Scheduling retry {retry_count + 1}/{max_retries} in {delay_label} (using delayed exchange)")
 
         try:
-            # Publish to delay queue (will auto-route back to main queue after TTL)
+            # Publish to delayed exchange with x-delay header
+            # The exchange will hold the message and deliver it to crawl_requests after delay
             self.channel.basic_publish(
-                exchange='',
-                routing_key=retry_queue,
+                exchange='delayed_exchange',
+                routing_key='crawl_requests',
                 body=body,
                 properties=pika.BasicProperties(
                     delivery_mode=2,  # Persistent
