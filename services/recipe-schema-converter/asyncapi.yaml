@@ -1,0 +1,407 @@
+asyncapi: 3.0.0
+info:
+  title: Recipe Schema Converter Service
+  version: 1.0.0
+  description: |
+    Microservice that consumes raw recipe data from Instagram posts,
+    uses an LLM to extract structured recipe information, and publishes
+    schema.org/Recipe formatted data for downstream consumption.
+  contact:
+    name: API Support
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
+
+servers:
+  production:
+    host: localhost:5672
+    protocol: amqp
+    description: RabbitMQ broker
+    variables:
+      port:
+        default: '5672'
+        description: RabbitMQ port
+
+channels:
+  raw_recipe_data:
+    address: raw_recipe_data
+    description: Queue for incoming raw recipe data from Instagram scraper
+    messages:
+      RawRecipeData:
+        $ref: '#/components/messages/RawRecipeData'
+
+  structured_recipes:
+    address: structured_recipes
+    description: Queue for outgoing structured recipe data in schema.org format
+    messages:
+      StructuredRecipe:
+        $ref: '#/components/messages/StructuredRecipe'
+
+operations:
+  consumeRawRecipeData:
+    action: receive
+    channel:
+      $ref: '#/channels/raw_recipe_data'
+    summary: Consume raw recipe data from the queue
+    description: |
+      Receives raw Instagram post data and processes it through an LLM
+      to extract structured recipe information.
+      The task will retry up to 3 times with exponential backoff (30s, 60s, 120s)
+      if extraction fails.
+    messages:
+      - $ref: '#/channels/raw_recipe_data/messages/RawRecipeData'
+
+  publishStructuredRecipe:
+    action: send
+    channel:
+      $ref: '#/channels/structured_recipes'
+    summary: Publish structured recipe data
+    description: |
+      Publishes successfully converted recipe data in schema.org/Recipe format
+      for consumption by downstream services (e.g., recipe storage, search indexing).
+    messages:
+      - $ref: '#/channels/structured_recipes/messages/StructuredRecipe'
+
+components:
+  messages:
+    RawRecipeData:
+      name: RawRecipeData
+      title: Raw Recipe Data
+      summary: Raw data extracted from Instagram post
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/RawRecipeDataPayload'
+      examples:
+        - name: CompleteRecipe
+          summary: Complete raw recipe data from Instagram
+          payload:
+            url: https://www.instagram.com/p/ABC123DEF456/
+            caption: |
+              Delicious homemade pasta!
+
+              Ingredients:
+              - 400g flour
+              - 4 eggs
+              - Salt
+
+              Instructions:
+              1. Mix flour and eggs
+              2. Knead for 10 minutes
+              3. Rest for 30 minutes
+              4. Roll and cut
+            media_urls:
+              - https://instagram.com/image1.jpg
+              - https://instagram.com/image2.jpg
+            author: chef_mario
+            timestamp: '2025-01-15T12:00:00Z'
+            hashtags:
+              - pasta
+              - homemade
+              - recipe
+            mentions:
+              - foodblogger
+            likes_count: 1250
+            comments_count: 42
+            author_top_comment: Thanks for all the love! Recipe details in bio!
+
+    StructuredRecipe:
+      name: StructuredRecipe
+      title: Structured Recipe
+      summary: Recipe data in schema.org/Recipe format
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/StructuredRecipePayload'
+      examples:
+        - name: CompleteStructuredRecipe
+          summary: Fully extracted recipe in schema.org format
+          payload:
+            '@context': https://schema.org
+            '@type': Recipe
+            name: Delicious Homemade Pasta
+            description: A classic homemade pasta recipe
+            author:
+              '@type': Person
+              name: chef_mario
+              url: https://www.instagram.com/chef_mario
+            datePublished: '2025-01-15T12:00:00Z'
+            image:
+              - https://instagram.com/image1.jpg
+              - https://instagram.com/image2.jpg
+            recipeIngredient:
+              - 400g flour
+              - 4 eggs
+              - Salt
+            recipeInstructions:
+              - '@type': HowToStep
+                text: Mix flour and eggs
+              - '@type': HowToStep
+                text: Knead for 10 minutes
+              - '@type': HowToStep
+                text: Rest for 30 minutes
+              - '@type': HowToStep
+                text: Roll and cut
+            prepTime: PT10M
+            cookTime: PT30M
+            totalTime: PT40M
+            recipeYield: '4 servings'
+            recipeCategory: main course
+            recipeCuisine: Italian
+            keywords: pasta, homemade, recipe
+            source_url: https://www.instagram.com/p/ABC123DEF456/
+            extraction_confidence: 0.85
+            extraction_notes: null
+
+  schemas:
+    RawRecipeDataPayload:
+      type: object
+      required:
+        - url
+        - caption
+        - media_urls
+        - author
+        - timestamp
+        - hashtags
+        - mentions
+      properties:
+        url:
+          type: string
+          format: uri
+          description: Original Instagram post URL
+          examples:
+            - https://www.instagram.com/p/ABC123DEF456/
+        caption:
+          type: string
+          description: Full post caption text (may contain recipe instructions)
+          examples:
+            - |
+              Delicious homemade pasta!
+
+              Ingredients:
+              - 400g flour
+              - 4 eggs
+        media_urls:
+          type: array
+          description: URLs of all images/videos in the post (including carousel items)
+          items:
+            type: string
+            format: uri
+          minItems: 0
+          examples:
+            - - https://instagram.com/image1.jpg
+            - - https://instagram.com/img1.jpg
+              - https://instagram.com/img2.jpg
+        author:
+          type: string
+          description: Instagram username of the post author
+          examples:
+            - chef_mario
+            - foodblogger_jane
+        timestamp:
+          type: string
+          format: date-time
+          description: Post creation timestamp in ISO 8601 format
+          examples:
+            - '2025-01-15T12:00:00Z'
+        hashtags:
+          type: array
+          description: List of hashtags used in the post (without # symbol)
+          items:
+            type: string
+          examples:
+            - - pasta
+              - homemade
+              - recipe
+        mentions:
+          type: array
+          description: List of mentioned usernames (without @ symbol)
+          items:
+            type: string
+          examples:
+            - - foodblogger
+              - chef_friend
+        likes_count:
+          type: integer
+          nullable: true
+          description: Number of likes on the post (null if unavailable)
+          minimum: 0
+          examples:
+            - 1250
+            - null
+        comments_count:
+          type: integer
+          nullable: true
+          description: Number of comments on the post (null if unavailable)
+          minimum: 0
+          examples:
+            - 42
+            - null
+        author_top_comment:
+          type: string
+          nullable: true
+          description: Most-liked comment by the post author (often contains recipe details)
+          examples:
+            - Thanks for all the love! Recipe details in bio!
+            - null
+
+    StructuredRecipePayload:
+      type: object
+      required:
+        - '@context'
+        - '@type'
+        - name
+        - source_url
+        - extraction_confidence
+      properties:
+        '@context':
+          type: string
+          const: https://schema.org
+          description: JSON-LD context
+        '@type':
+          type: string
+          const: Recipe
+          description: schema.org type
+        name:
+          type: string
+          description: Recipe title extracted from caption
+          examples:
+            - Delicious Homemade Pasta
+            - Quick Breakfast Smoothie
+        description:
+          type: string
+          nullable: true
+          description: Brief description of the recipe
+          examples:
+            - A classic homemade pasta recipe with simple ingredients
+        author:
+          $ref: '#/components/schemas/Person'
+        datePublished:
+          type: string
+          format: date-time
+          description: Original post timestamp
+        image:
+          type: array
+          items:
+            type: string
+            format: uri
+          description: Image URLs from the post
+        recipeIngredient:
+          type: array
+          items:
+            type: string
+          description: List of ingredients
+          examples:
+            - - 400g flour
+              - 4 eggs
+              - Salt to taste
+        recipeInstructions:
+          oneOf:
+            - type: string
+              description: Plain text instructions
+            - type: array
+              items:
+                $ref: '#/components/schemas/HowToStep'
+              description: Structured step-by-step instructions
+        prepTime:
+          type: string
+          nullable: true
+          description: Preparation time in ISO 8601 duration format
+          examples:
+            - PT15M
+            - PT1H
+        cookTime:
+          type: string
+          nullable: true
+          description: Cooking time in ISO 8601 duration format
+          examples:
+            - PT30M
+            - PT2H
+        totalTime:
+          type: string
+          nullable: true
+          description: Total time in ISO 8601 duration format
+          examples:
+            - PT45M
+            - PT3H
+        recipeYield:
+          type: string
+          nullable: true
+          description: Number of servings or yield
+          examples:
+            - '4 servings'
+            - '12 cookies'
+        recipeCategory:
+          type: string
+          nullable: true
+          description: Recipe category
+          examples:
+            - appetizer
+            - main course
+            - dessert
+        recipeCuisine:
+          type: string
+          nullable: true
+          description: Cuisine type
+          examples:
+            - Italian
+            - Mexican
+            - Japanese
+        keywords:
+          type: string
+          nullable: true
+          description: Comma-separated keywords from hashtags
+          examples:
+            - pasta, homemade, recipe, italian
+        source_url:
+          type: string
+          format: uri
+          description: Original Instagram post URL
+        extraction_confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: Confidence score of extraction (0-1)
+          examples:
+            - 0.85
+            - 0.5
+        extraction_notes:
+          type: string
+          nullable: true
+          description: Notes about what could/could not be extracted
+          examples:
+            - Could not determine cooking time
+            - null
+
+    Person:
+      type: object
+      required:
+        - '@type'
+        - name
+      properties:
+        '@type':
+          type: string
+          const: Person
+        name:
+          type: string
+          description: Person's name (Instagram username)
+        url:
+          type: string
+          format: uri
+          description: Link to person's profile
+
+    HowToStep:
+      type: object
+      required:
+        - '@type'
+        - text
+      properties:
+        '@type':
+          type: string
+          const: HowToStep
+        text:
+          type: string
+          description: Instruction text for this step
+
+  securitySchemes:
+    rabbitmqAuth:
+      type: userPassword
+      description: Username and password for RabbitMQ authentication
