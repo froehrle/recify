@@ -1,0 +1,31 @@
+# Install dependencies
+install:
+    bun install
+
+# Run the worker locally
+worker:
+    bun run src/index.ts
+
+# Run in development mode with watch
+dev:
+    bun --watch run src/index.ts
+
+# Run tests
+test:
+    bun test
+
+# Type check
+typecheck:
+    bun run tsc --noEmit
+
+# Validate AsyncAPI spec
+validate-asyncapi:
+    bunx asyncapi validate asyncapi.yaml
+
+# Build Docker image
+build:
+    docker build -t recipe-schema-converter .
+
+# Run with Docker
+docker-run:
+    docker run --rm --env-file .env recipe-schema-converter

@@ -1,4 +1,5 @@
 mod instagram-scraper 'services/instagram-scraper'
+mod recipe-schema-converter 'services/recipe-schema-converter'
 
 # AsyncAPI: Bundle all asyncapi files from services directory
 asyncapi-bundle:
