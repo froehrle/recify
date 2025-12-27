@@ -28,6 +28,10 @@ graph TB
         DB[(MongoDB)]
     end
 
+    subgraph "Backend"
+        FC[Frontend Connector]
+    end
+
     subgraph "Presentation"
         UI[Web UI]
     end
@@ -37,8 +41,10 @@ graph TB
     RSC <-->|API Request/Response| LLM
     RSC -->|Publish: converted_recipe| RMQ
     RMQ -->|Consume: converted_recipe| DB
+    RMQ -->|Consume: converted_recipe| FC
     DB <-->|Query/Store| UI
-    UI -->|Request crawl| RMQ
+    UI <-->|WebSocket| FC
+    FC -->|Publish: crawl_requests| RMQ
     RMQ -->|Crawl command| IG
 
     style RMQ fill:#ff6b6b
@@ -46,6 +52,7 @@ graph TB
     style RSC fill:#45b7d1
     style LLM fill:#a29bfe
     style DB fill:#96ceb4
+    style FC fill:#fd79a8
     style UI fill:#ffeaa7
 ```
 
@@ -65,6 +72,9 @@ External language model service accessed via API to parse and structure unstruct
 
 ### MongoDB
 Persistent data storage for processed recipes.
+
+### Frontend Connector
+WebSocket server that bridges the Web UI and RabbitMQ. Receives crawl requests from the frontend via WebSocket and publishes them to RabbitMQ. Consumes converted recipes from RabbitMQ and forwards them to connected clients in real-time.
 
 ### Web UI
 User interface for browsing recipes and triggering crawl operations.
