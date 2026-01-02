@@ -51,6 +51,24 @@ services:
       retries: 3
       start_period: 40s
 
+  recipe-schema-converter:
+    build: ./services/recipe-schema-converter
+    container_name: recipe-schema-converter
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: guest
+      RABBITMQ_PASS: guest
+      GITHUB_TOKEN: ${GITHUB_TOKEN}
+      LLM_MODEL: ${LLM_MODEL:-azure-openai/gpt-4o}
+    restart: unless-stopped
+    networks:
+      - instagram-network
+
   # RabbitScout: Modern RabbitMQ Management UI
   rabbitscout:
     image: ghcr.io/ralve-org/rabbitscout:latest
