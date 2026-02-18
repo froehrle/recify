@@ -21,54 +21,6 @@ servers:
         default: '5672'
         description: RabbitMQ port
 channels:
-  crawl_requests:
-    address: crawl_requests
-    description: Queue for incoming Instagram crawl requests
-    messages:
-      CrawlRequest:
-        name: CrawlRequest
-        title: Instagram Crawl Request
-        summary: Request to crawl an Instagram post for recipe data
-        contentType: application/json
-        payload:
-          type: object
-          required:
-            - instagram_url
-          properties:
-            instagram_url:
-              type: string
-              format: uri
-              pattern: ^https://www\.instagram\.com/(p|reel)/
-              description: Instagram post or reel URL to crawl
-              examples:
-                - https://www.instagram.com/p/ABC123DEF456/
-                - https://www.instagram.com/reel/XYZ789ABC123/
-            request_id:
-              type: string
-              description: Optional unique identifier for this request
-              examples:
-                - req-12345
-                - crawl-2025-01-15-001
-            priority:
-              type: integer
-              default: 1
-              minimum: 1
-              maximum: 10
-              description: Priority level for processing (1=low, 10=high)
-              examples:
-                - 1
-                - 5
-        examples:
-          - name: BasicRequest
-            summary: Basic crawl request with just URL
-            payload:
-              instagram_url: https://www.instagram.com/p/ABC123DEF456/
-          - name: FullRequest
-            summary: Crawl request with all fields
-            payload:
-              instagram_url: https://www.instagram.com/reel/XYZ789ABC123/
-              request_id: req-12345
-              priority: 2
   raw_recipe_data:
     address: raw_recipe_data
     description: Queue for outgoing raw recipe data extracted from Instagram
@@ -195,7 +147,282 @@ channels:
               likes_count: 1250
               comments_count: 42
               author_top_comment: Thanks for all the love! Recipe details in bio!
+  structured_recipes:
+    address: structured_recipes
+    description: Queue for outgoing structured recipe data in schema.org format
+    messages:
+      StructuredRecipe:
+        name: StructuredRecipe
+        title: Structured Recipe
+        summary: Recipe data in schema.org/Recipe format
+        contentType: application/json
+        payload:
+          type: object
+          required:
+            - '@context'
+            - '@type'
+            - name
+            - source_url
+            - extraction_confidence
+          properties:
+            '@context':
+              type: string
+              const: https://schema.org
+              description: JSON-LD context
+            '@type':
+              type: string
+              const: Recipe
+              description: schema.org type
+            name:
+              type: string
+              description: Recipe title extracted from caption
+              examples:
+                - Delicious Homemade Pasta
+                - Quick Breakfast Smoothie
+            description:
+              type: string
+              nullable: true
+              description: Brief description of the recipe
+              examples:
+                - A classic homemade pasta recipe with simple ingredients
+            author:
+              type: object
+              required:
+                - '@type'
+                - name
+              properties:
+                '@type':
+                  type: string
+                  const: Person
+                name:
+                  type: string
+                  description: Person's name (Instagram username)
+                url:
+                  type: string
+                  format: uri
+                  description: Link to person's profile
+            datePublished:
+              type: string
+              format: date-time
+              description: Original post timestamp
+            image:
+              type: array
+              items:
+                type: string
+                format: uri
+              description: Image URLs from the post
+            recipeIngredient:
+              type: array
+              items:
+                type: string
+              description: List of ingredients
+              examples:
+                - - 400g flour
+                  - 4 eggs
+                  - Salt to taste
+            recipeInstructions:
+              oneOf:
+                - type: string
+                  description: Plain text instructions
+                - type: array
+                  items:
+                    type: object
+                    required:
+                      - '@type'
+                      - text
+                    properties:
+                      '@type':
+                        type: string
+                        const: HowToStep
+                      text:
+                        type: string
+                        description: Instruction text for this step
+                  description: Structured step-by-step instructions
+            prepTime:
+              type: string
+              nullable: true
+              description: Preparation time in ISO 8601 duration format
+              examples:
+                - PT15M
+                - PT1H
+            cookTime:
+              type: string
+              nullable: true
+              description: Cooking time in ISO 8601 duration format
+              examples:
+                - PT30M
+                - PT2H
+            totalTime:
+              type: string
+              nullable: true
+              description: Total time in ISO 8601 duration format
+              examples:
+                - PT45M
+                - PT3H
+            recipeYield:
+              type: string
+              nullable: true
+              description: Number of servings or yield
+              examples:
+                - 4 servings
+                - 12 cookies
+            recipeCategory:
+              type: string
+              nullable: true
+              description: Recipe category
+              examples:
+                - appetizer
+                - main course
+                - dessert
+            recipeCuisine:
+              type: string
+              nullable: true
+              description: Cuisine type
+              examples:
+                - Italian
+                - Mexican
+                - Japanese
+            keywords:
+              type: string
+              nullable: true
+              description: Comma-separated keywords from hashtags
+              examples:
+                - pasta, homemade, recipe, italian
+            source_url:
+              type: string
+              format: uri
+              description: Original Instagram post URL
+            extraction_confidence:
+              type: number
+              minimum: 0
+              maximum: 1
+              description: Confidence score of extraction (0-1)
+              examples:
+                - 0.85
+                - 0.5
+            extraction_notes:
+              type: string
+              nullable: true
+              description: Notes about what could/could not be extracted
+              examples:
+                - Could not determine cooking time
+                - null
+        examples:
+          - name: CompleteStructuredRecipe
+            summary: Fully extracted recipe in schema.org format
+            payload:
+              '@context': https://schema.org
+              '@type': Recipe
+              name: Delicious Homemade Pasta
+              description: A classic homemade pasta recipe
+              author:
+                '@type': Person
+                name: chef_mario
+                url: https://www.instagram.com/chef_mario
+              datePublished: '2025-01-15T12:00:00Z'
+              image:
+                - https://instagram.com/image1.jpg
+                - https://instagram.com/image2.jpg
+              recipeIngredient:
+                - 400g flour
+                - 4 eggs
+                - Salt
+              recipeInstructions:
+                - '@type': HowToStep
+                  text: Mix flour and eggs
+                - '@type': HowToStep
+                  text: Knead for 10 minutes
+                - '@type': HowToStep
+                  text: Rest for 30 minutes
+                - '@type': HowToStep
+                  text: Roll and cut
+              prepTime: PT10M
+              cookTime: PT30M
+              totalTime: PT40M
+              recipeYield: 4 servings
+              recipeCategory: main course
+              recipeCuisine: Italian
+              keywords: pasta, homemade, recipe
+              source_url: https://www.instagram.com/p/ABC123DEF456/
+              extraction_confidence: 0.85
+              extraction_notes: null
+  crawl_requests:
+    address: crawl_requests
+    description: Queue for incoming Instagram crawl requests
+    messages:
+      CrawlRequest:
+        name: CrawlRequest
+        title: Instagram Crawl Request
+        summary: Request to crawl an Instagram post for recipe data
+        contentType: application/json
+        payload:
+          type: object
+          required:
+            - instagram_url
+          properties:
+            instagram_url:
+              type: string
+              format: uri
+              pattern: ^https://www\.instagram\.com/(p|reel)/
+              description: Instagram post or reel URL to crawl
+              examples:
+                - https://www.instagram.com/p/ABC123DEF456/
+                - https://www.instagram.com/reel/XYZ789ABC123/
+            request_id:
+              type: string
+              description: Optional unique identifier for this request
+              examples:
+                - req-12345
+                - crawl-2025-01-15-001
+            priority:
+              type: integer
+              default: 1
+              minimum: 1
+              maximum: 10
+              description: Priority level for processing (1=low, 10=high)
+              examples:
+                - 1
+                - 5
+        examples:
+          - name: BasicRequest
+            summary: Basic crawl request with just URL
+            payload:
+              instagram_url: https://www.instagram.com/p/ABC123DEF456/
+          - name: FullRequest
+            summary: Crawl request with all fields
+            payload:
+              instagram_url: https://www.instagram.com/reel/XYZ789ABC123/
+              request_id: req-12345
+              priority: 2
 operations:
+  consumeRawRecipeData:
+    action: receive
+    channel:
+      $ref: '#/channels/raw_recipe_data'
+    summary: Consume raw recipe data from the queue
+    description: >
+      Receives raw Instagram post data and processes it through an LLM
+
+      to extract structured recipe information.
+
+      The task will retry up to 3 times with exponential backoff (30s, 60s,
+      120s)
+
+      if extraction fails.
+    messages:
+      - $ref: '#/channels/raw_recipe_data/messages/RawRecipeData'
+  publishStructuredRecipe:
+    action: send
+    channel:
+      $ref: '#/channels/structured_recipes'
+    summary: Publish structured recipe data
+    description: >
+      Publishes successfully converted recipe data in schema.org/Recipe format
+
+      for consumption by downstream services (e.g., recipe storage, search
+      indexing).
+    messages:
+      - $ref: '#/channels/structured_recipes/messages/StructuredRecipe'
   crawlInstagramPost:
     action: receive
     channel:
@@ -224,50 +451,6 @@ operations:
       - $ref: '#/channels/raw_recipe_data/messages/RawRecipeData'
 components:
   messages:
-    CrawlRequest:
-      name: CrawlRequest
-      title: Instagram Crawl Request
-      summary: Request to crawl an Instagram post for recipe data
-      contentType: application/json
-      payload:
-        type: object
-        required:
-          - instagram_url
-        properties:
-          instagram_url:
-            type: string
-            format: uri
-            pattern: ^https://www\.instagram\.com/(p|reel)/
-            description: Instagram post or reel URL to crawl
-            examples:
-              - https://www.instagram.com/p/ABC123DEF456/
-              - https://www.instagram.com/reel/XYZ789ABC123/
-          request_id:
-            type: string
-            description: Optional unique identifier for this request
-            examples:
-              - req-12345
-              - crawl-2025-01-15-001
-          priority:
-            type: integer
-            default: 1
-            minimum: 1
-            maximum: 10
-            description: Priority level for processing (1=low, 10=high)
-            examples:
-              - 1
-              - 5
-      examples:
-        - name: BasicRequest
-          summary: Basic crawl request with just URL
-          payload:
-            instagram_url: https://www.instagram.com/p/ABC123DEF456/
-        - name: FullRequest
-          summary: Crawl request with all fields
-          payload:
-            instagram_url: https://www.instagram.com/reel/XYZ789ABC123/
-            request_id: req-12345
-            priority: 2
     RawRecipeData:
       name: RawRecipeData
       title: Raw Recipe Data
@@ -390,35 +573,246 @@ components:
             likes_count: 1250
             comments_count: 42
             author_top_comment: Thanks for all the love! Recipe details in bio!
+    StructuredRecipe:
+      name: StructuredRecipe
+      title: Structured Recipe
+      summary: Recipe data in schema.org/Recipe format
+      contentType: application/json
+      payload:
+        type: object
+        required:
+          - '@context'
+          - '@type'
+          - name
+          - source_url
+          - extraction_confidence
+        properties:
+          '@context':
+            type: string
+            const: https://schema.org
+            description: JSON-LD context
+          '@type':
+            type: string
+            const: Recipe
+            description: schema.org type
+          name:
+            type: string
+            description: Recipe title extracted from caption
+            examples:
+              - Delicious Homemade Pasta
+              - Quick Breakfast Smoothie
+          description:
+            type: string
+            nullable: true
+            description: Brief description of the recipe
+            examples:
+              - A classic homemade pasta recipe with simple ingredients
+          author:
+            type: object
+            required:
+              - '@type'
+              - name
+            properties:
+              '@type':
+                type: string
+                const: Person
+              name:
+                type: string
+                description: Person's name (Instagram username)
+              url:
+                type: string
+                format: uri
+                description: Link to person's profile
+          datePublished:
+            type: string
+            format: date-time
+            description: Original post timestamp
+          image:
+            type: array
+            items:
+              type: string
+              format: uri
+            description: Image URLs from the post
+          recipeIngredient:
+            type: array
+            items:
+              type: string
+            description: List of ingredients
+            examples:
+              - - 400g flour
+                - 4 eggs
+                - Salt to taste
+          recipeInstructions:
+            oneOf:
+              - type: string
+                description: Plain text instructions
+              - type: array
+                items:
+                  type: object
+                  required:
+                    - '@type'
+                    - text
+                  properties:
+                    '@type':
+                      type: string
+                      const: HowToStep
+                    text:
+                      type: string
+                      description: Instruction text for this step
+                description: Structured step-by-step instructions
+          prepTime:
+            type: string
+            nullable: true
+            description: Preparation time in ISO 8601 duration format
+            examples:
+              - PT15M
+              - PT1H
+          cookTime:
+            type: string
+            nullable: true
+            description: Cooking time in ISO 8601 duration format
+            examples:
+              - PT30M
+              - PT2H
+          totalTime:
+            type: string
+            nullable: true
+            description: Total time in ISO 8601 duration format
+            examples:
+              - PT45M
+              - PT3H
+          recipeYield:
+            type: string
+            nullable: true
+            description: Number of servings or yield
+            examples:
+              - 4 servings
+              - 12 cookies
+          recipeCategory:
+            type: string
+            nullable: true
+            description: Recipe category
+            examples:
+              - appetizer
+              - main course
+              - dessert
+          recipeCuisine:
+            type: string
+            nullable: true
+            description: Cuisine type
+            examples:
+              - Italian
+              - Mexican
+              - Japanese
+          keywords:
+            type: string
+            nullable: true
+            description: Comma-separated keywords from hashtags
+            examples:
+              - pasta, homemade, recipe, italian
+          source_url:
+            type: string
+            format: uri
+            description: Original Instagram post URL
+          extraction_confidence:
+            type: number
+            minimum: 0
+            maximum: 1
+            description: Confidence score of extraction (0-1)
+            examples:
+              - 0.85
+              - 0.5
+          extraction_notes:
+            type: string
+            nullable: true
+            description: Notes about what could/could not be extracted
+            examples:
+              - Could not determine cooking time
+              - null
+      examples:
+        - name: CompleteStructuredRecipe
+          summary: Fully extracted recipe in schema.org format
+          payload:
+            '@context': https://schema.org
+            '@type': Recipe
+            name: Delicious Homemade Pasta
+            description: A classic homemade pasta recipe
+            author:
+              '@type': Person
+              name: chef_mario
+              url: https://www.instagram.com/chef_mario
+            datePublished: '2025-01-15T12:00:00Z'
+            image:
+              - https://instagram.com/image1.jpg
+              - https://instagram.com/image2.jpg
+            recipeIngredient:
+              - 400g flour
+              - 4 eggs
+              - Salt
+            recipeInstructions:
+              - '@type': HowToStep
+                text: Mix flour and eggs
+              - '@type': HowToStep
+                text: Knead for 10 minutes
+              - '@type': HowToStep
+                text: Rest for 30 minutes
+              - '@type': HowToStep
+                text: Roll and cut
+            prepTime: PT10M
+            cookTime: PT30M
+            totalTime: PT40M
+            recipeYield: 4 servings
+            recipeCategory: main course
+            recipeCuisine: Italian
+            keywords: pasta, homemade, recipe
+            source_url: https://www.instagram.com/p/ABC123DEF456/
+            extraction_confidence: 0.85
+            extraction_notes: null
+    CrawlRequest:
+      name: CrawlRequest
+      title: Instagram Crawl Request
+      summary: Request to crawl an Instagram post for recipe data
+      contentType: application/json
+      payload:
+        type: object
+        required:
+          - instagram_url
+        properties:
+          instagram_url:
+            type: string
+            format: uri
+            pattern: ^https://www\.instagram\.com/(p|reel)/
+            description: Instagram post or reel URL to crawl
+            examples:
+              - https://www.instagram.com/p/ABC123DEF456/
+              - https://www.instagram.com/reel/XYZ789ABC123/
+          request_id:
+            type: string
+            description: Optional unique identifier for this request
+            examples:
+              - req-12345
+              - crawl-2025-01-15-001
+          priority:
+            type: integer
+            default: 1
+            minimum: 1
+            maximum: 10
+            description: Priority level for processing (1=low, 10=high)
+            examples:
+              - 1
+              - 5
+      examples:
+        - name: BasicRequest
+          summary: Basic crawl request with just URL
+          payload:
+            instagram_url: https://www.instagram.com/p/ABC123DEF456/
+        - name: FullRequest
+          summary: Crawl request with all fields
+          payload:
+            instagram_url: https://www.instagram.com/reel/XYZ789ABC123/
+            request_id: req-12345
+            priority: 2
   schemas:
-    CrawlRequestPayload:
-      type: object
-      required:
-        - instagram_url
-      properties:
-        instagram_url:
-          type: string
-          format: uri
-          pattern: ^https://www\.instagram\.com/(p|reel)/
-          description: Instagram post or reel URL to crawl
-          examples:
-            - https://www.instagram.com/p/ABC123DEF456/
-            - https://www.instagram.com/reel/XYZ789ABC123/
-        request_id:
-          type: string
-          description: Optional unique identifier for this request
-          examples:
-            - req-12345
-            - crawl-2025-01-15-001
-        priority:
-          type: integer
-          default: 1
-          minimum: 1
-          maximum: 10
-          description: Priority level for processing (1=low, 10=high)
-          examples:
-            - 1
-            - 5
     RawRecipeDataPayload:
       type: object
       required:
@@ -511,6 +905,213 @@ components:
           examples:
             - Thanks for all the love! Recipe details in bio!
             - null
+    StructuredRecipePayload:
+      type: object
+      required:
+        - '@context'
+        - '@type'
+        - name
+        - source_url
+        - extraction_confidence
+      properties:
+        '@context':
+          type: string
+          const: https://schema.org
+          description: JSON-LD context
+        '@type':
+          type: string
+          const: Recipe
+          description: schema.org type
+        name:
+          type: string
+          description: Recipe title extracted from caption
+          examples:
+            - Delicious Homemade Pasta
+            - Quick Breakfast Smoothie
+        description:
+          type: string
+          nullable: true
+          description: Brief description of the recipe
+          examples:
+            - A classic homemade pasta recipe with simple ingredients
+        author:
+          type: object
+          required:
+            - '@type'
+            - name
+          properties:
+            '@type':
+              type: string
+              const: Person
+            name:
+              type: string
+              description: Person's name (Instagram username)
+            url:
+              type: string
+              format: uri
+              description: Link to person's profile
+        datePublished:
+          type: string
+          format: date-time
+          description: Original post timestamp
+        image:
+          type: array
+          items:
+            type: string
+            format: uri
+          description: Image URLs from the post
+        recipeIngredient:
+          type: array
+          items:
+            type: string
+          description: List of ingredients
+          examples:
+            - - 400g flour
+              - 4 eggs
+              - Salt to taste
+        recipeInstructions:
+          oneOf:
+            - type: string
+              description: Plain text instructions
+            - type: array
+              items:
+                type: object
+                required:
+                  - '@type'
+                  - text
+                properties:
+                  '@type':
+                    type: string
+                    const: HowToStep
+                  text:
+                    type: string
+                    description: Instruction text for this step
+              description: Structured step-by-step instructions
+        prepTime:
+          type: string
+          nullable: true
+          description: Preparation time in ISO 8601 duration format
+          examples:
+            - PT15M
+            - PT1H
+        cookTime:
+          type: string
+          nullable: true
+          description: Cooking time in ISO 8601 duration format
+          examples:
+            - PT30M
+            - PT2H
+        totalTime:
+          type: string
+          nullable: true
+          description: Total time in ISO 8601 duration format
+          examples:
+            - PT45M
+            - PT3H
+        recipeYield:
+          type: string
+          nullable: true
+          description: Number of servings or yield
+          examples:
+            - 4 servings
+            - 12 cookies
+        recipeCategory:
+          type: string
+          nullable: true
+          description: Recipe category
+          examples:
+            - appetizer
+            - main course
+            - dessert
+        recipeCuisine:
+          type: string
+          nullable: true
+          description: Cuisine type
+          examples:
+            - Italian
+            - Mexican
+            - Japanese
+        keywords:
+          type: string
+          nullable: true
+          description: Comma-separated keywords from hashtags
+          examples:
+            - pasta, homemade, recipe, italian
+        source_url:
+          type: string
+          format: uri
+          description: Original Instagram post URL
+        extraction_confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: Confidence score of extraction (0-1)
+          examples:
+            - 0.85
+            - 0.5
+        extraction_notes:
+          type: string
+          nullable: true
+          description: Notes about what could/could not be extracted
+          examples:
+            - Could not determine cooking time
+            - null
+    Person:
+      type: object
+      required:
+        - '@type'
+        - name
+      properties:
+        '@type':
+          type: string
+          const: Person
+        name:
+          type: string
+          description: Person's name (Instagram username)
+        url:
+          type: string
+          format: uri
+          description: Link to person's profile
+    HowToStep:
+      type: object
+      required:
+        - '@type'
+        - text
+      properties:
+        '@type':
+          type: string
+          const: HowToStep
+        text:
+          type: string
+          description: Instruction text for this step
+    CrawlRequestPayload:
+      type: object
+      required:
+        - instagram_url
+      properties:
+        instagram_url:
+          type: string
+          format: uri
+          pattern: ^https://www\.instagram\.com/(p|reel)/
+          description: Instagram post or reel URL to crawl
+          examples:
+            - https://www.instagram.com/p/ABC123DEF456/
+            - https://www.instagram.com/reel/XYZ789ABC123/
+        request_id:
+          type: string
+          description: Optional unique identifier for this request
+          examples:
+            - req-12345
+            - crawl-2025-01-15-001
+        priority:
+          type: integer
+          default: 1
+          minimum: 1
+          maximum: 10
+          description: Priority level for processing (1=low, 10=high)
+          examples:
+            - 1
+            - 5
   securitySchemes:
     rabbitmqAuth:
       type: userPassword
